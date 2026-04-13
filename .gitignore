@@ -1,0 +1,42 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies and package managers
+vendor/
+node_modules/
+
+# Logs and runtime files
+*.log
+*.out.log
+*.err.log
+logs/
+tmp/
+temp/
+cache/
+sessions/
+
+# Build and coverage output
+dist/
+build/
+coverage/
+.phpunit.cache/
+
+# Uploads and generated user content
+uploads/
+storage/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+
+# Local database dumps and backups
+*.sql.gz
+*.dump
+*.bak
+*.backup
+
