@@ -20,7 +20,12 @@ function render_app_layout(string $title, array $user, callable $content): void
         <link rel="stylesheet" href="<?= e(app_url('assets/css/style.css')) ?>">
     </head>
     <body>
-        <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme">Theme</button>
+        <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="4"></circle>
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+            </svg>
+        </button>
             <aside class="sidebar">
                 <a class="sidebar-logo" href="<?= e(app_url('dashboard.php')) ?>">SQLab</a>
                 <nav>

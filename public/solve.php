@@ -21,6 +21,10 @@ $schemaSql = implode("\n\n", array_filter(array_map(
 preg_match('/CREATE\s+TABLE\s+`?([a-zA-Z0-9_]+)`?/i', $schemaSql, $tableMatch);
 $starterQuery = 'SELECT * FROM ' . ($tableMatch[1] ?? 'users') . ' LIMIT 10';
 $difficultyBadge = $problem['difficulty'] === 'easy' ? 'success' : ($problem['difficulty'] === 'medium' ? 'warning' : 'danger');
+$datasetId = isset($problem['dataset_records'][0]['id']) ? (int) $problem['dataset_records'][0]['id'] : 0;
+$assetVersion = (string) filemtime(__DIR__ . '/assets/js/solve.js');
+$chartAssetPath = __DIR__ . '/assets/js/chart.umd.min.js';
+$chartAssetVersion = (string) (file_exists($chartAssetPath) ? filemtime($chartAssetPath) : time());
 ?>
 <!doctype html>
 <html lang="en">
@@ -28,10 +32,15 @@ $difficultyBadge = $problem['difficulty'] === 'easy' ? 'success' : ($problem['di
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= e($problem['title']) ?> | SQLab</title>
-    <link rel="stylesheet" href="<?= e(app_url('assets/css/style.css')) ?>">
+    <link rel="stylesheet" href="<?= e(app_url('assets/css/style.css?v=' . $assetVersion)) ?>">
 </head>
 <body class="solve-body">
-    <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme">Theme</button>
+    <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+        </svg>
+    </button>
     <main class="solve-layout" data-problem-id="<?= (int) $problem['id'] ?>">
         <section class="solve-left">
             <header class="solve-problem-bar">
@@ -61,12 +70,27 @@ $difficultyBadge = $problem['difficulty'] === 'easy' ? 'success' : ($problem['di
         <section class="solve-right">
             <div class="solve-tabs" role="tablist">
                 <button class="active" data-tab="results" type="button">Results</button>
+                <button data-tab="chart" type="button" id="chartTabButton" disabled>Chart</button>
                 <button data-tab="expected" type="button">Expected</button>
                 <button data-tab="submissions" type="button">Submissions</button>
             </div>
             <div class="solve-output">
                 <div class="solve-tab-panel active" id="tab-results">
                     <div class="empty-state">Run your query to see results.</div>
+                </div>
+                <div class="solve-tab-panel" id="tab-chart">
+                    <div class="chart-toolbar">
+                        <label for="chartType">Chart type</label>
+                        <select id="chartType">
+                            <option value="bar">Bar</option>
+                            <option value="line">Line</option>
+                            <option value="pie">Pie</option>
+                        </select>
+                    </div>
+                    <div class="chart-wrap">
+                        <canvas id="resultChart"></canvas>
+                    </div>
+                    <p class="muted" id="chartMessage">Run a query to get a chart suggestion.</p>
                 </div>
                 <div class="solve-tab-panel" id="tab-expected">
                     <div class="empty-state">Open this tab to fetch the expected output.</div>
@@ -86,7 +110,18 @@ $difficultyBadge = $problem['difficulty'] === 'easy' ? 'success' : ($problem['di
                 </div>
                 <button class="btn-ghost" id="closeSchema" type="button">Close</button>
             </div>
-            <pre><code><?= e($schemaSql) ?></code></pre>
+            <div class="schema-tabs" id="schemaTabs">
+                <button class="active" type="button" data-schema-tab="sql">SQL</button>
+                <button type="button" data-schema-tab="visual">Visual</button>
+            </div>
+            <div class="schema-tab-panel active" id="schema-tab-sql">
+                <pre><code><?= e($schemaSql) ?></code></pre>
+            </div>
+            <div class="schema-tab-panel" id="schema-tab-visual">
+                <div class="schema-visual-wrap" id="schemaVisualWrap">
+                    <div class="empty-state">Open Visual tab to load table diagram.</div>
+                </div>
+            </div>
         </div>
     </div>
     <script>
@@ -97,13 +132,17 @@ $difficultyBadge = $problem['difficulty'] === 'easy' ? 'success' : ($problem['di
                 execute: <?= json_encode(app_url('api/execute.php'), JSON_THROW_ON_ERROR) ?>,
                 hint: <?= json_encode(app_url('api/hint.php'), JSON_THROW_ON_ERROR) ?>,
                 expected: <?= json_encode(app_url('api/expected.php?problem_id=' . (int) $problem['id']), JSON_THROW_ON_ERROR) ?>,
-                submissions: <?= json_encode(app_url('api/submissions.php?problem_id=' . (int) $problem['id']), JSON_THROW_ON_ERROR) ?>
-            }
+                submissions: <?= json_encode(app_url('api/submissions.php?problem_id=' . (int) $problem['id']), JSON_THROW_ON_ERROR) ?>,
+                schemaVisual: <?= json_encode(app_url('api/schema_visual.php?dataset_id=' . $datasetId), JSON_THROW_ON_ERROR) ?>
+            },
+            datasetId: <?= $datasetId ?>,
+            chartLocalUrl: <?= json_encode(app_url('assets/js/chart.umd.min.js?v=' . $chartAssetVersion), JSON_THROW_ON_ERROR) ?>
         };
     </script>
+    <script src="<?= e(app_url('assets/js/chart.umd.min.js?v=' . $chartAssetVersion)) ?>"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
-    <script src="<?= e(app_url('assets/js/app.js')) ?>" defer></script>
-    <script src="<?= e(app_url('assets/js/solve.js')) ?>" defer></script>
+    <script src="<?= e(app_url('assets/js/app.js?v=' . $assetVersion)) ?>" defer></script>
+    <script src="<?= e(app_url('assets/js/solve.js?v=' . $assetVersion)) ?>" defer></script>
 </body>
 </html>
 <?php

@@ -648,6 +648,25 @@ tr:hover td {
 .profile-hero { justify-content:flex-start; }
 .avatar-initials { display:grid; place-items:center; width:64px; height:64px; border-radius:50%; background:#1F2A44; color:#fff; font-size:20px; font-weight:700; }
 .pagination { display:flex; gap:12px; align-items:center; justify-content:flex-end; margin-top:16px; }
+.leaderboard-toggle { margin:-8px 0 14px; }
+.leaderboard-podium { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; margin-bottom:16px; align-items:end; }
+.podium-item { display:flex; flex-direction:column; align-items:center; gap:10px; padding:16px; border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--bg-surface); animation:slideUp .2s ease both; }
+.podium-avatar { width:72px; height:72px; border-radius:50%; border:2px solid var(--border); display:grid; place-items:center; font-weight:700; background:var(--bg); }
+.podium-item.gold .podium-avatar { width:88px; height:88px; border-color:#C9A84C; }
+.podium-item.silver .podium-avatar { border-color:#A8A9AD; }
+.podium-item.bronze .podium-avatar { border-color:#CD7F32; }
+.leaderboard-table tbody tr { animation:slideUp .2s ease both; }
+.leaderboard-table tbody tr:nth-child(1) { animation-delay:0ms; }
+.leaderboard-table tbody tr:nth-child(2) { animation-delay:40ms; }
+.leaderboard-table tbody tr:nth-child(3) { animation-delay:80ms; }
+.leaderboard-table tbody tr:nth-child(4) { animation-delay:120ms; }
+.leaderboard-table tbody tr:nth-child(5) { animation-delay:160ms; }
+.leaderboard-table tbody tr:nth-child(6) { animation-delay:200ms; }
+.leaderboard-table tbody tr:nth-child(7) { animation-delay:240ms; }
+.leaderboard-table tbody tr:nth-child(8) { animation-delay:280ms; }
+.leaderboard-table tbody tr:nth-child(9) { animation-delay:320ms; }
+.leaderboard-table tbody tr:nth-child(10) { animation-delay:360ms; }
+.leaderboard-table tbody tr.current-user-row td { background:var(--bg-hover); font-weight:600; }
 .solve-body { overflow:hidden; }
 .solve-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(360px,42vw); height:100vh; }
 .solve-left, .solve-right { min-width:0; display:flex; flex-direction:column; background:var(--bg); }
@@ -668,6 +687,10 @@ tr:hover td {
 .solve-output { flex:1; min-height:0; overflow:auto; padding:16px; }
 .solve-tab-panel { display:none; }
 .solve-tab-panel.active { display:block; }
+.chart-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+.chart-toolbar label { margin:0; text-transform:none; letter-spacing:0; font-size:13px; }
+.chart-wrap { position:relative; width:100%; height:300px; border:1px solid var(--border); border-radius:var(--radius); padding:8px; background:var(--bg-surface); overflow:hidden; }
+.chart-wrap canvas { display:block; width:100% !important; height:100% !important; max-width:100%; }
 .solve-flash { position:relative; margin-bottom:14px; padding:12px 14px; border-radius:var(--radius); border:1px solid var(--border); overflow:hidden; }
 .solve-flash.correct { color:var(--success); background:rgba(31, 122, 67, 0.08); border-color:rgba(31, 122, 67, 0.22); }
 .solve-flash.warning { color:var(--warning); background:rgba(155, 103, 0, 0.08); border-color:rgba(155, 103, 0, 0.22); }
@@ -678,8 +701,16 @@ tr:hover td {
 .schema-modal[hidden] { display:none; }
 .schema-modal-card { width:min(900px,100%); max-height:88vh; overflow:auto; padding:24px; border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--bg-surface); }
 .schema-modal pre { padding:16px; overflow:auto; border-radius:var(--radius); border:1px solid var(--border); background:var(--code-bg); }
+.schema-tabs { display:flex; gap:10px; margin-bottom:14px; }
+.schema-tabs button { border:1px solid var(--border); border-radius:var(--radius); padding:7px 12px; background:transparent; color:var(--text-muted); cursor:pointer; }
+.schema-tabs button.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+.schema-tab-panel { display:none; }
+.schema-tab-panel.active { display:block; }
+.schema-visual-wrap { max-height:60vh; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-surface); padding:8px; }
 @keyframes sqlab-confetti { from { opacity:0.85; transform:translateY(-20px) rotate(0deg); } to { opacity:0; transform:translateY(80px) rotate(12deg); } }
 @media (max-width: 900px) {
+  .leaderboard-podium { grid-template-columns:1fr; }
+  .problem-filter-bar { grid-template-columns:1fr; }
   .solve-layout { grid-template-columns:1fr; overflow:auto; }
   .solve-left, .solve-right { min-height:70vh; }
 }

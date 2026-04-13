@@ -4,16 +4,29 @@ document.addEventListener('DOMContentLoaded', () => {
   let hintLevel = 1;
   let expectedLoaded = false;
   let submissionsLoaded = false;
+  let schemaVisualLoaded = false;
+  let lastResult = null;
+  let currentSuggestedChart = null;
+  let chartInstance = null;
+  let chartLibraryPromise = null;
 
   const resultsPanel = document.getElementById('tab-results');
+  const chartPanel = document.getElementById('tab-chart');
   const expectedPanel = document.getElementById('tab-expected');
   const submissionsPanel = document.getElementById('tab-submissions');
   const executionTime = document.getElementById('executionTime');
   const hintButton = document.getElementById('hintButton');
   const hintBox = document.getElementById('hintBox');
   const schemaModal = document.getElementById('schemaModal');
+  const schemaVisualWrap = document.getElementById('schemaVisualWrap');
+  const chartType = document.getElementById('chartType');
+  const chartMessage = document.getElementById('chartMessage');
+  const chartCanvas = document.getElementById('resultChart');
+  const chartTabButton = document.getElementById('chartTabButton');
 
   const currentTheme = () => document.documentElement.getAttribute('data-theme') === 'dark' ? 'vs-dark' : 'vs';
+  const chartColor = () => document.documentElement.getAttribute('data-theme') === 'dark' ? 'rgba(91, 91, 214, 0.7)' : 'rgba(31, 42, 68, 0.7)';
+  const chartBorder = () => document.documentElement.getAttribute('data-theme') === 'dark' ? '#5B5BD6' : '#1F2A44';
 
   require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' } });
   require(['vs/editor/editor.main'], () => {
@@ -35,12 +48,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.monaco) {
       monaco.editor.setTheme(currentTheme());
     }
+
+    if (lastResult) {
+      renderChart();
+    }
   }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
   document.getElementById('runQuery')?.addEventListener('click', runQuery);
   document.getElementById('resetQuery')?.addEventListener('click', () => editor?.setValue(config.starterQuery));
   document.getElementById('openSchema')?.addEventListener('click', () => schemaModal.hidden = false);
   document.getElementById('closeSchema')?.addEventListener('click', () => schemaModal.hidden = true);
+  chartType?.addEventListener('change', () => renderChart());
+
   schemaModal?.addEventListener('click', (event) => {
     if (event.target === schemaModal) {
       schemaModal.hidden = true;
@@ -57,10 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.querySelectorAll('.solve-tabs button').forEach((button) => {
     button.addEventListener('click', async () => {
-      document.querySelectorAll('.solve-tabs button').forEach((tab) => tab.classList.remove('active'));
-      document.querySelectorAll('.solve-tab-panel').forEach((panel) => panel.classList.remove('active'));
-      button.classList.add('active');
-      document.getElementById(`tab-${button.dataset.tab}`)?.classList.add('active');
+      activateTab('.solve-tabs button', '.solve-tab-panel', button.dataset.tab);
 
       if (button.dataset.tab === 'expected' && !expectedLoaded) {
         expectedLoaded = true;
@@ -71,6 +87,21 @@ document.addEventListener('DOMContentLoaded', () => {
       if (button.dataset.tab === 'submissions' && !submissionsLoaded) {
         submissionsLoaded = true;
         await loadSubmissions();
+      }
+
+      if (button.dataset.tab === 'chart') {
+        renderChart();
+      }
+    });
+  });
+
+  document.querySelectorAll('#schemaTabs button').forEach((button) => {
+    button.addEventListener('click', async () => {
+      activateTab('#schemaTabs button', '.schema-tab-panel', button.dataset.schemaTab, 'schema-tab-');
+
+      if (button.dataset.schemaTab === 'visual' && !schemaVisualLoaded) {
+        schemaVisualLoaded = true;
+        await loadSchemaVisual();
       }
     });
   });
@@ -83,6 +114,9 @@ document.addEventListener('DOMContentLoaded', () => {
     resultsPanel.innerHTML = '<div class="empty-state">Running query...</div>';
     const result = await postJson(config.endpoints.execute, { problem_id: config.problemId, query: editor.getValue() });
     executionTime.textContent = result.execution_ms ? `${result.execution_ms} ms` : '';
+    lastResult = (result.success && Number(result.row_count) > 0) ? result : null;
+    chartTabButton.disabled = !(result.success && Number(result.row_count) > 0);
+    currentSuggestedChart = result.success ? suggestChartType(result) : null;
 
     if (!result.success) {
       resultsPanel.innerHTML = `<div class="solve-flash error">${escapeHtml(result.error || 'Query failed.')}</div>`;
@@ -95,7 +129,439 @@ document.addEventListener('DOMContentLoaded', () => {
       appendTable(resultsPanel, result);
     }
 
+    if (currentSuggestedChart) {
+      chartType.value = currentSuggestedChart;
+      chartMessage.textContent = `Suggested chart: ${currentSuggestedChart}. You can override it.`;
+    } else {
+      chartMessage.textContent = 'No chart suggestion for this result shape.';
+    }
+
+    renderChart();
     submissionsLoaded = false;
+  }
+
+  async function renderChart() {
+    if (chartInstance) {
+      chartInstance.destroy();
+      chartInstance = null;
+    }
+
+    if (!lastResult || !lastResult.success) {
+      chartMessage.textContent = 'Run a query to get a chart suggestion.';
+      return;
+    }
+
+    const rows = lastResult.rows || [];
+    const columns = lastResult.columns || [];
+
+    if (!rows.length || !columns.length) {
+      chartMessage.textContent = 'No chart suggestion for this result shape.';
+      return;
+    }
+
+    const selected = chartType.value || currentSuggestedChart || 'bar';
+    const data = chartData(rows, columns, selected);
+
+    if (!data) {
+      chartMessage.textContent = 'No chart suggestion for this result shape.';
+      return;
+    }
+
+    if (typeof window.Chart === 'undefined') {
+      await ensureChartLibrary();
+    }
+
+    if (typeof window.Chart === 'undefined') {
+      chartMessage.textContent = 'Chart.js unavailable; showing offline fallback chart.';
+      renderFallbackChart(selected, data);
+      return;
+    }
+
+    clearFallbackCanvas();
+    chartMessage.textContent = '';
+    chartInstance = new Chart(chartCanvas.getContext('2d'), {
+      type: selected,
+      data,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: selected !== 'bar' } },
+      },
+    });
+  }
+
+  function chartData(rows, columns, type) {
+    const numericColumns = columns.filter((column) => rows.every((row) => isNumeric(row[column])));
+    const dateColumns = columns.filter((column) => rows.every((row) => isDateLike(row[column])));
+
+    if ((type === 'bar' || type === 'line' || type === 'pie') && columns.length >= 2 && numericColumns.length >= 1) {
+      const labelColumn = columns.find((column) => column !== numericColumns[0]) || columns[0];
+      const valueColumn = numericColumns[0];
+      const dataset = {
+        label: valueColumn,
+        data: rows.map((row) => Number(row[valueColumn] ?? 0)),
+        backgroundColor: chartColor(),
+        borderColor: chartBorder(),
+        borderWidth: 1.5,
+        fill: type !== 'bar' && type !== 'pie',
+        tension: 0.2,
+      };
+      return {
+        labels: rows.map((row) => String(row[labelColumn] ?? '')),
+        datasets: [dataset],
+      };
+    }
+
+    if (numericColumns.length === 1) {
+      const values = rows.map((row) => Number(row[numericColumns[0]] ?? 0));
+      const bucketCount = Math.min(8, Math.max(3, Math.ceil(Math.sqrt(values.length))));
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const step = Math.max(1, (max - min) / bucketCount);
+      const buckets = new Array(bucketCount).fill(0);
+      const labels = buckets.map((_, i) => `${(min + step * i).toFixed(1)}-${(min + step * (i + 1)).toFixed(1)}`);
+      values.forEach((value) => {
+        const idx = Math.min(bucketCount - 1, Math.floor((value - min) / step));
+        buckets[idx] += 1;
+      });
+      return {
+        labels,
+        datasets: [{
+          label: 'Frequency',
+          data: buckets,
+          backgroundColor: chartColor(),
+          borderColor: chartBorder(),
+          borderWidth: 1.5,
+        }],
+      };
+    }
+
+    if (dateColumns.length > 0 && numericColumns.length > 0) {
+      const dateColumn = dateColumns[0];
+      const valueColumn = numericColumns[0];
+      const sorted = [...rows].sort((a, b) => new Date(a[dateColumn]).getTime() - new Date(b[dateColumn]).getTime());
+      return {
+        labels: sorted.map((row) => String(row[dateColumn] ?? '')),
+        datasets: [{
+          label: valueColumn,
+          data: sorted.map((row) => Number(row[valueColumn] ?? 0)),
+          backgroundColor: chartColor(),
+          borderColor: chartBorder(),
+          borderWidth: 1.5,
+          fill: false,
+          tension: 0.25,
+        }],
+      };
+    }
+
+    return null;
+  }
+
+  function suggestChartType(result) {
+    const rows = result.rows || [];
+    const columns = result.columns || [];
+    if (!rows.length || !columns.length) {
+      return null;
+    }
+
+    const numericColumns = columns.filter((column) => rows.every((row) => isNumeric(row[column])));
+    const dateColumns = columns.filter((column) => rows.every((row) => isDateLike(row[column])));
+
+    if (columns.length === 2 && isNumeric(rows[0][columns[1]])) {
+      if (isDateLike(rows[0][columns[0]]) || dateColumns.includes(columns[0])) {
+        return 'line';
+      }
+      return 'bar';
+    }
+
+    if (columns.length === 1 && numericColumns.length === 1) {
+      return 'bar';
+    }
+
+    if (dateColumns.length > 0 && numericColumns.length > 0) {
+      return 'line';
+    }
+
+    return null;
+  }
+
+  function renderFallbackChart(type, data) {
+    const ctx = chartCanvas.getContext('2d');
+
+    if (!ctx) {
+      chartMessage.textContent = 'Unable to draw chart on this browser.';
+      return;
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.max(320, chartCanvas.clientWidth || 640);
+    const height = Math.max(220, chartCanvas.clientHeight || 300);
+    chartCanvas.width = Math.round(width * dpr);
+    chartCanvas.height = Math.round(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const labels = data.labels || [];
+    const values = (data.datasets?.[0]?.data || []).map((value) => Number(value) || 0);
+
+    if (!values.length) {
+      return;
+    }
+
+    const color = chartBorder();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = chartColor();
+    ctx.lineWidth = 2;
+    ctx.font = '12px Inter, sans-serif';
+
+    if (type === 'pie') {
+      const sum = values.reduce((acc, value) => acc + value, 0) || 1;
+      let start = -Math.PI / 2;
+      const cx = width / 2;
+      const cy = height / 2;
+      const radius = Math.min(width, height) * 0.32;
+      values.forEach((value, index) => {
+        const angle = (value / sum) * Math.PI * 2;
+        const alpha = 0.35 + (index % 5) * 0.12;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.fillStyle = colorToAlpha(color, Math.min(0.95, alpha));
+        ctx.arc(cx, cy, radius, start, start + angle);
+        ctx.closePath();
+        ctx.fill();
+        start += angle;
+      });
+      return;
+    }
+
+    const max = Math.max(...values, 1);
+    const left = 36;
+    const right = width - 20;
+    const bottom = height - 28;
+    const top = 18;
+    const innerWidth = right - left;
+    const innerHeight = bottom - top;
+    const step = innerWidth / Math.max(1, values.length);
+
+    ctx.strokeStyle = colorToAlpha(color, 0.35);
+    ctx.beginPath();
+    ctx.moveTo(left, top);
+    ctx.lineTo(left, bottom);
+    ctx.lineTo(right, bottom);
+    ctx.stroke();
+
+    if (type === 'line') {
+      ctx.strokeStyle = color;
+      ctx.fillStyle = colorToAlpha(color, 0.16);
+      ctx.beginPath();
+      values.forEach((value, index) => {
+        const x = left + step * index + step / 2;
+        const y = bottom - (value / max) * innerHeight;
+        if (index === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+      });
+      ctx.stroke();
+      values.forEach((value, index) => {
+        const x = left + step * index + step / 2;
+        const y = bottom - (value / max) * innerHeight;
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        if (labels[index]) {
+          ctx.fillStyle = colorToAlpha(color, 0.8);
+          ctx.fillText(String(labels[index]).slice(0, 10), x - 14, bottom + 14);
+        }
+      });
+      return;
+    }
+
+    ctx.fillStyle = chartColor();
+    values.forEach((value, index) => {
+      const x = left + step * index + step * 0.18;
+      const barWidth = step * 0.64;
+      const barHeight = (value / max) * innerHeight;
+      const y = bottom - barHeight;
+      ctx.fillRect(x, y, barWidth, barHeight);
+      if (labels[index]) {
+        ctx.fillStyle = colorToAlpha(color, 0.8);
+        ctx.fillText(String(labels[index]).slice(0, 10), x, bottom + 14);
+        ctx.fillStyle = chartColor();
+      }
+    });
+  }
+
+  function clearFallbackCanvas() {
+    const ctx = chartCanvas.getContext('2d');
+    if (!ctx) {
+      return;
+    }
+    ctx.clearRect(0, 0, chartCanvas.width || 0, chartCanvas.height || 0);
+  }
+
+  function colorToAlpha(hexColor, alpha) {
+    const map = {
+      '#1F2A44': `rgba(31, 42, 68, ${alpha})`,
+      '#5B5BD6': `rgba(91, 91, 214, ${alpha})`,
+    };
+
+    return map[hexColor] || `rgba(31, 42, 68, ${alpha})`;
+  }
+
+  async function ensureChartLibrary() {
+    if (typeof window.Chart !== 'undefined') {
+      return true;
+    }
+
+    if (!chartLibraryPromise) {
+      const localCandidates = [
+        config.chartLocalUrl,
+        '/assets/js/chart.umd.min.js',
+      ];
+
+      chartLibraryPromise = (async () => {
+        for (const src of localCandidates) {
+          if (!src) {
+            continue;
+          }
+          const loaded = await loadScript(src);
+          if (loaded && typeof window.Chart !== 'undefined') {
+            return true;
+          }
+        }
+        return false;
+      })();
+    }
+
+    return chartLibraryPromise;
+  }
+
+  function loadScript(src) {
+    return new Promise((resolve) => {
+      const existing = document.querySelector(`script[data-chart-cdn="${src}"]`);
+      if (existing) {
+        if (typeof window.Chart !== 'undefined') {
+          resolve(true);
+          return;
+        }
+        existing.addEventListener('load', () => resolve(true), { once: true });
+        existing.addEventListener('error', () => resolve(false), { once: true });
+        return;
+      }
+
+      const previousDefine = window.define;
+      const hadOwnDefine = Object.prototype.hasOwnProperty.call(window, 'define');
+      window.define = undefined;
+
+      const restoreDefine = () => {
+        if (hadOwnDefine) {
+          window.define = previousDefine;
+        } else {
+          delete window.define;
+        }
+      };
+
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.defer = true;
+      script.dataset.chartCdn = src;
+      script.onload = () => {
+        restoreDefine();
+        resolve(true);
+      };
+      script.onerror = () => {
+        restoreDefine();
+        resolve(false);
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  async function loadSchemaVisual() {
+    if (!config.datasetId) {
+      schemaVisualWrap.innerHTML = '<div class="empty-state">No dataset available for visual schema.</div>';
+      return;
+    }
+
+    schemaVisualWrap.innerHTML = '<div class="empty-state">Loading schema diagram...</div>';
+    const response = await getJson(config.endpoints.schemaVisual);
+
+    if (!response.tables || !response.tables.length) {
+      schemaVisualWrap.innerHTML = '<div class="empty-state">No schema data available.</div>';
+      return;
+    }
+
+    const tables = response.tables;
+    const cols = tables.length <= 4 ? 2 : 3;
+    const boxWidth = 280;
+    const rowHeight = 26;
+    const headerHeight = 34;
+    const gapX = 40;
+    const gapY = 30;
+    const boxes = [];
+
+    tables.forEach((table, index) => {
+      const rowCount = table.columns.length;
+      const boxHeight = headerHeight + rowCount * rowHeight;
+      const col = index % cols;
+      const row = Math.floor(index / cols);
+      boxes.push({
+        ...table,
+        x: col * (boxWidth + gapX) + 20,
+        y: row * (Math.max(180, boxHeight) + gapY) + 20,
+        width: boxWidth,
+        height: boxHeight,
+      });
+    });
+
+    const width = cols * (boxWidth + gapX) + 40;
+    const rowsCount = Math.ceil(tables.length / cols);
+    const height = rowsCount * 230 + 40;
+    const boxMap = Object.fromEntries(boxes.map((box) => [box.name, box]));
+
+    let svg = `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><defs><marker id="fkArrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#9b6700"></path></marker></defs>`;
+
+    boxes.forEach((box) => {
+      box.columns.forEach((column, index) => {
+        if (!column.fk_table || !boxMap[column.fk_table]) {
+          return;
+        }
+        const sourceY = box.y + headerHeight + index * rowHeight + rowHeight / 2;
+        const targetTable = boxMap[column.fk_table];
+        const targetIndex = Math.max(0, targetTable.columns.findIndex((item) => item.name === column.fk_column));
+        const targetY = targetTable.y + headerHeight + targetIndex * rowHeight + rowHeight / 2;
+        const sourceX = box.x + box.width;
+        const targetX = targetTable.x;
+        svg += `<line x1="${sourceX}" y1="${sourceY}" x2="${targetX}" y2="${targetY}" stroke="#9b6700" stroke-width="1.4" marker-end="url(#fkArrow)"></line>`;
+      });
+    });
+
+    boxes.forEach((box) => {
+      svg += `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="10" ry="10" fill="var(--bg-surface)" stroke="var(--border)"></rect>`;
+      svg += `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${headerHeight}" rx="10" ry="10" fill="#1F2A44"></rect>`;
+      svg += `<text x="${box.x + 12}" y="${box.y + 22}" fill="#ffffff" font-size="13" font-weight="700">${escapeHtml(box.name)}</text>`;
+
+      box.columns.forEach((column, index) => {
+        const y = box.y + headerHeight + index * rowHeight;
+        if (index % 2 === 1) {
+          svg += `<rect x="${box.x + 1}" y="${y}" width="${box.width - 2}" height="${rowHeight}" fill="rgba(0,0,0,0.03)"></rect>`;
+        }
+        svg += `<text x="${box.x + 12}" y="${y + 17}" fill="currentColor" font-size="12">${escapeHtml(column.name)} <tspan fill="#777">${escapeHtml(column.type)}</tspan></text>`;
+        if (column.is_pk) {
+          svg += `<rect x="${box.x + box.width - 74}" y="${y + 6}" width="24" height="14" rx="7" fill="rgba(31,122,67,0.15)"></rect><text x="${box.x + box.width - 67}" y="${y + 16}" fill="#1f7a43" font-size="10">PK</text>`;
+        }
+        if (column.fk_table) {
+          svg += `<rect x="${box.x + box.width - 44}" y="${y + 6}" width="24" height="14" rx="7" fill="rgba(155,103,0,0.15)"></rect><text x="${box.x + box.width - 37}" y="${y + 16}" fill="#9b6700" font-size="10">FK</text>`;
+        }
+      });
+    });
+
+    svg += '</svg>';
+    schemaVisualWrap.innerHTML = svg;
   }
 
   async function loadSubmissions() {
@@ -129,6 +595,13 @@ document.addEventListener('DOMContentLoaded', () => {
     panel.appendChild(table);
   }
 
+  function activateTab(buttonSelector, panelSelector, key, panelPrefix = 'tab-') {
+    document.querySelectorAll(buttonSelector).forEach((button) => button.classList.remove('active'));
+    document.querySelectorAll(panelSelector).forEach((panel) => panel.classList.remove('active'));
+    document.querySelector(`${buttonSelector}[data-tab="${key}"], ${buttonSelector}[data-schema-tab="${key}"]`)?.classList.add('active');
+    document.getElementById(`${panelPrefix}${key}`)?.classList.add('active');
+  }
+
   async function postJson(url, payload) {
     const response = await fetch(url, {
       method: 'POST',
@@ -143,6 +616,20 @@ document.addEventListener('DOMContentLoaded', () => {
     return response.json();
   }
 
+  function isNumeric(value) {
+    return value !== null && value !== '' && !Number.isNaN(Number(value));
+  }
+
+  function isDateLike(value) {
+    if (value === null || value === '') {
+      return false;
+    }
+    if (/^\d{4}$/.test(String(value))) {
+      return true;
+    }
+    return !Number.isNaN(Date.parse(String(value)));
+  }
+
   function escapeHtml(value) {
     return String(value)
       .replaceAll('&', '&amp;')
@@ -152,4 +639,3 @@ document.addEventListener('DOMContentLoaded', () => {
       .replaceAll("'", '&#039;');
   }
 });
-
