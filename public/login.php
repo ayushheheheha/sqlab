@@ -39,23 +39,25 @@ render_auth_layout('Login', static function () use ($error, $flash): void {
     <?php if ($error): ?>
         <div class="flash flash-error"><?= e($error) ?></div>
     <?php endif; ?>
-    <form method="post">
+    <form method="post" class="auth-form" novalidate>
         <?= csrf_input() ?>
         <div class="form-group">
             <label for="email">Email</label>
-            <input id="email" type="email" name="email" required>
+            <input id="email" type="email" name="email" autocomplete="email" required>
         </div>
         <div class="form-group">
             <label for="password">Password</label>
-            <input id="password" type="password" name="password" required>
+            <div class="auth-password-wrap">
+                <input id="password" type="password" name="password" autocomplete="current-password" required>
+                <button type="button" class="auth-password-toggle" data-password-toggle="password">Show</button>
+            </div>
         </div>
         <button class="btn-primary btn-block" type="submit">Log In</button>
     </form>
     <?php if (Auth::isGoogleConfigured()): ?>
-        <div class="form-group" style="margin-top:10px;">
-            <a class="btn-ghost btn-block" href="<?= e(app_url('google_login.php')) ?>">Continue with Google</a>
-        </div>
+        <div class="auth-divider"><span>or continue with</span></div>
+        <a class="btn-ghost btn-block auth-google" href="<?= e(app_url('google_login.php')) ?>">Continue with Google</a>
     <?php endif; ?>
-    <p class="auth-copy" style="margin-top:16px;">No account yet? <a href="<?= e(app_url('register.php')) ?>">Register here</a>.</p>
+    <p class="auth-note">No account yet? <a href="<?= e(app_url('register.php')) ?>">Register here</a>.</p>
     <?php
 });

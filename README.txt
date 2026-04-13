@@ -1,4 +1,4 @@
-SQLab setup:
+GenzLAB setup:
 1. Copy `.env.example` to `.env` and set your MySQL credentials.
 2. Create the database named in `DB_NAME`.
 3. Import `migrations/001_schema.sql`.

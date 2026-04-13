@@ -6,7 +6,7 @@ final class EmailService
 {
     public static function sendVerificationOtp(string $toEmail, string $username, string $otp): bool
     {
-        $appName = (string) ($_ENV['APP_NAME'] ?? 'SQLab');
+        $appName = (string) ($_ENV['APP_NAME'] ?? 'GenzLAB');
         $subject = $appName . ' verification code';
         $body = sprintf(
             "Hi %s,\n\nYour verification code is: %s\n\nThis code expires in 10 minutes.\nIf you did not request this, ignore this email.\n\n- %s",
@@ -42,7 +42,7 @@ final class EmailService
         $encryption = strtolower(trim((string) ($_ENV['SMTP_ENCRYPTION'] ?? 'tls')));
         $timeout = (int) ($_ENV['SMTP_TIMEOUT'] ?? 15);
         $from = trim((string) ($_ENV['MAIL_FROM'] ?? 'no-reply@localhost'));
-        $fromName = trim((string) ($_ENV['MAIL_FROM_NAME'] ?? ($_ENV['APP_NAME'] ?? 'SQLab')));
+        $fromName = trim((string) ($_ENV['MAIL_FROM_NAME'] ?? ($_ENV['APP_NAME'] ?? 'GenzLAB')));
 
         if ($host === '' || $port <= 0 || $user === '' || $pass === '' || $from === '') {
             self::logMail($toEmail, $subject, $body . "\n\n[SMTP ERROR] Missing SMTP env configuration.");

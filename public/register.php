@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 render_auth_layout('Register', static function () use ($message, $error, $flash): void {
     ?>
-    <h1>Create your SQLab account</h1>
+    <h1>Create your GenzLAB account</h1>
     <p class="auth-copy">Track solves, earn badges, and climb the leaderboard.</p>
     <?php if ($flash): ?>
         <div class="flash flash-<?= e((string) ($flash['type'] ?? 'success')) ?>"><?= e((string) ($flash['message'] ?? '')) ?></div>
@@ -43,27 +43,29 @@ render_auth_layout('Register', static function () use ($message, $error, $flash)
     <?php if ($error): ?>
         <div class="flash flash-error"><?= e($error) ?></div>
     <?php endif; ?>
-    <form method="post">
+    <form method="post" class="auth-form" novalidate>
         <?= csrf_input() ?>
         <div class="form-group">
             <label for="username">Username</label>
-            <input id="username" type="text" name="username" required minlength="3">
+            <input id="username" type="text" name="username" autocomplete="username" required minlength="3">
         </div>
         <div class="form-group">
             <label for="email">Email</label>
-            <input id="email" type="email" name="email" required>
+            <input id="email" type="email" name="email" autocomplete="email" required>
         </div>
         <div class="form-group">
             <label for="password">Password</label>
-            <input id="password" type="password" name="password" required minlength="8">
+            <div class="auth-password-wrap">
+                <input id="password" type="password" name="password" autocomplete="new-password" required minlength="8">
+                <button type="button" class="auth-password-toggle" data-password-toggle="password">Show</button>
+            </div>
         </div>
         <button class="btn-primary btn-block" type="submit">Register</button>
     </form>
     <?php if (Auth::isGoogleConfigured()): ?>
-        <div class="form-group" style="margin-top:10px;">
-            <a class="btn-ghost btn-block" href="<?= e(app_url('google_login.php')) ?>">Sign up with Google</a>
-        </div>
+        <div class="auth-divider"><span>or continue with</span></div>
+        <a class="btn-ghost btn-block auth-google" href="<?= e(app_url('google_login.php')) ?>">Sign up with Google</a>
     <?php endif; ?>
-    <p class="auth-copy" style="margin-top:16px;">Already have an account? <a href="<?= e(app_url('login.php')) ?>">Log in</a>.</p>
+    <p class="auth-note">Already have an account? <a href="<?= e(app_url('login.php')) ?>">Log in</a>.</p>
     <?php
 });

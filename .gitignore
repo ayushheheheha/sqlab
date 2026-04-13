@@ -16,6 +16,9 @@ tmp/
 temp/
 cache/
 sessions/
+*.pid
+*.tmp
+tmp_check_*.php
 
 # Build and coverage output
 dist/
