@@ -7,6 +7,7 @@ function render_app_layout(string $title, array $user, callable $content): void
     $navItems = [
         ['label' => 'Dashboard', 'href' => 'dashboard.php'],
         ['label' => 'Problems', 'href' => 'problems.php'],
+        ['label' => 'Practice Lab', 'href' => 'practice.php'],
         ['label' => 'Leaderboard', 'href' => 'leaderboard.php'],
         ['label' => 'Profile', 'href' => 'profile.php'],
     ];
@@ -42,6 +43,7 @@ function render_app_layout(string $title, array $user, callable $content): void
                             <a class="sidebar-link <?= is_active_path('admin/index.php') ? 'active' : '' ?>" href="<?= e(app_url('admin/index.php')) ?>">Overview</a>
                             <a class="sidebar-link <?= is_active_path('admin/problems.php') ? 'active' : '' ?>" href="<?= e(app_url('admin/problems.php')) ?>">Problems</a>
                             <a class="sidebar-link <?= is_active_path('admin/users.php') ? 'active' : '' ?>" href="<?= e(app_url('admin/users.php')) ?>">Users</a>
+                            <a class="sidebar-link <?= is_active_path('admin/datasets.php') ? 'active' : '' ?>" href="<?= e(app_url('admin/datasets.php')) ?>">Datasets</a>
                         </nav>
                     </div>
                 <?php endif; ?>

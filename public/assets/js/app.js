@@ -1,4 +1,56 @@
 document.addEventListener('DOMContentLoaded', () => {
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+  const originalFetch = window.fetch.bind(window);
+  let pendingFetches = 0;
+
+  const globalSpinner = document.createElement('div');
+  globalSpinner.className = 'global-fetch-spinner';
+  globalSpinner.hidden = true;
+  globalSpinner.innerHTML = '<span class="spinner" aria-hidden="true"></span><span>Loading...</span>';
+  document.body.appendChild(globalSpinner);
+
+  window.fetch = async (input, init = {}) => {
+    const nextInit = { ...init };
+    const headers = new Headers(nextInit.headers || {});
+    if (csrfToken && !headers.has('X-CSRF-Token')) {
+      headers.set('X-CSRF-Token', csrfToken);
+    }
+    nextInit.headers = headers;
+
+    pendingFetches += 1;
+    globalSpinner.hidden = false;
+
+    try {
+      return await originalFetch(input, nextInit);
+    } finally {
+      pendingFetches = Math.max(0, pendingFetches - 1);
+      if (pendingFetches === 0) {
+        globalSpinner.hidden = true;
+      }
+    }
+  };
+
+  window.showToast = (message, type = 'success', duration = 3000) => {
+    let stack = document.querySelector('.toast-stack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.className = 'toast-stack';
+      document.body.appendChild(stack);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `flash toast flash-${type === 'error' ? 'error' : (type === 'warning' ? 'warning' : 'success')}`;
+    toast.textContent = String(message || '');
+    stack.appendChild(toast);
+
+    setTimeout(() => {
+      toast.remove();
+      if (stack && stack.children.length === 0) {
+        stack.remove();
+      }
+    }, Math.max(800, Number(duration) || 3000));
+  };
+
   const html = document.documentElement;
   const toggle = document.querySelector('[data-theme-toggle]');
   const storedTheme = localStorage.getItem('sqlab-theme');

@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentSuggestedChart = null;
   let chartInstance = null;
   let chartLibraryPromise = null;
+  let fallbackEditor = null;
 
   const resultsPanel = document.getElementById('tab-results');
   const chartPanel = document.getElementById('tab-chart');
@@ -23,26 +24,48 @@ document.addEventListener('DOMContentLoaded', () => {
   const chartMessage = document.getElementById('chartMessage');
   const chartCanvas = document.getElementById('resultChart');
   const chartTabButton = document.getElementById('chartTabButton');
+  const runButton = document.getElementById('runQuery');
+  const editorHost = document.getElementById('editor');
 
   const currentTheme = () => document.documentElement.getAttribute('data-theme') === 'dark' ? 'vs-dark' : 'vs';
   const chartColor = () => document.documentElement.getAttribute('data-theme') === 'dark' ? 'rgba(91, 91, 214, 0.7)' : 'rgba(31, 42, 68, 0.7)';
   const chartBorder = () => document.documentElement.getAttribute('data-theme') === 'dark' ? '#5B5BD6' : '#1F2A44';
 
-  require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' } });
-  require(['vs/editor/editor.main'], () => {
-    editor = monaco.editor.create(document.getElementById('editor'), {
-      value: config.starterQuery,
-      language: 'sql',
-      theme: currentTheme(),
-      fontFamily: 'Consolas, "Courier New", monospace',
-      fontSize: 14,
-      minimap: { enabled: false },
-      automaticLayout: true,
-      scrollBeyondLastLine: false,
-    });
+  const monacoReadyTimeout = setTimeout(() => {
+    if (!editor) {
+      ensureFallbackEditor('SQL editor loaded in safe mode (Monaco unavailable).');
+    }
+  }, 2500);
 
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, runQuery);
-  });
+  if (typeof window.require !== 'function') {
+    clearTimeout(monacoReadyTimeout);
+    ensureFallbackEditor('SQL editor loaded in safe mode (Monaco script blocked).');
+  } else {
+    try {
+      require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' } });
+      require(['vs/editor/editor.main'], () => {
+        clearTimeout(monacoReadyTimeout);
+        editor = monaco.editor.create(editorHost, {
+          value: config.starterQuery,
+          language: 'sql',
+          theme: currentTheme(),
+          fontFamily: 'Consolas, "Courier New", monospace',
+          fontSize: 14,
+          minimap: { enabled: false },
+          automaticLayout: true,
+          scrollBeyondLastLine: false,
+        });
+
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, runQuery);
+      }, () => {
+        clearTimeout(monacoReadyTimeout);
+        ensureFallbackEditor('SQL editor loaded in safe mode (Monaco failed to initialize).');
+      });
+    } catch (_error) {
+      clearTimeout(monacoReadyTimeout);
+      ensureFallbackEditor('SQL editor loaded in safe mode (Monaco initialization error).');
+    }
+  }
 
   new MutationObserver(() => {
     if (window.monaco) {
@@ -55,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
   document.getElementById('runQuery')?.addEventListener('click', runQuery);
-  document.getElementById('resetQuery')?.addEventListener('click', () => editor?.setValue(config.starterQuery));
+  document.getElementById('resetQuery')?.addEventListener('click', () => setEditorValue(config.starterQuery));
   document.getElementById('openSchema')?.addEventListener('click', () => schemaModal.hidden = false);
   document.getElementById('closeSchema')?.addEventListener('click', () => schemaModal.hidden = true);
   chartType?.addEventListener('change', () => renderChart());
@@ -63,6 +86,20 @@ document.addEventListener('DOMContentLoaded', () => {
   schemaModal?.addEventListener('click', (event) => {
     if (event.target === schemaModal) {
       schemaModal.hidden = true;
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && String(event.key).toLowerCase() === 'k') {
+      event.preventDefault();
+      focusEditor();
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      if (schemaModal && !schemaModal.hidden) {
+        schemaModal.hidden = true;
+      }
     }
   });
 
@@ -107,37 +144,50 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   async function runQuery() {
-    if (!editor) {
+    if (runButton?.disabled) {
       return;
     }
 
-    resultsPanel.innerHTML = '<div class="empty-state">Running query...</div>';
-    const result = await postJson(config.endpoints.execute, { problem_id: config.problemId, query: editor.getValue() });
-    executionTime.textContent = result.execution_ms ? `${result.execution_ms} ms` : '';
-    lastResult = (result.success && Number(result.row_count) > 0) ? result : null;
-    chartTabButton.disabled = !(result.success && Number(result.row_count) > 0);
-    currentSuggestedChart = result.success ? suggestChartType(result) : null;
+    const query = getEditorValue().trim();
 
-    if (!result.success) {
-      resultsPanel.innerHTML = `<div class="solve-flash error">${escapeHtml(result.error || 'Query failed.')}</div>`;
-    } else if (result.is_correct) {
-      const badgeText = result.badges?.length ? ` Badges: ${result.badges.join(', ')}.` : '';
-      resultsPanel.innerHTML = `<div class="solve-flash correct">Correct! +${result.xp_awarded || 0} XP awarded.${escapeHtml(badgeText)}</div>`;
-      appendTable(resultsPanel, result);
-    } else {
-      resultsPanel.innerHTML = '<div class="solve-flash warning">Wrong answer - try again.</div>';
-      appendTable(resultsPanel, result);
+    if (!query) {
+      resultsPanel.innerHTML = '<div class="solve-flash warning">Write a query before running.</div>';
+      return;
     }
 
-    if (currentSuggestedChart) {
-      chartType.value = currentSuggestedChart;
-      chartMessage.textContent = `Suggested chart: ${currentSuggestedChart}. You can override it.`;
-    } else {
-      chartMessage.textContent = 'No chart suggestion for this result shape.';
-    }
+    setLoadingState(runButton, true, 'Run Query');
 
-    renderChart();
-    submissionsLoaded = false;
+    try {
+      resultsPanel.innerHTML = '<div class="empty-state">Running query...</div>';
+      const result = await postJson(config.endpoints.execute, { problem_id: config.problemId, query });
+      executionTime.textContent = result.execution_ms ? `${result.execution_ms} ms` : '';
+      lastResult = (result.success && Number(result.row_count) > 0) ? result : null;
+      chartTabButton.disabled = !(result.success && Number(result.row_count) > 0);
+      currentSuggestedChart = result.success ? suggestChartType(result) : null;
+
+      if (!result.success) {
+        resultsPanel.innerHTML = `<div class="solve-flash error">${escapeHtml(result.error || 'Query failed.')}</div>`;
+      } else if (result.is_correct) {
+        const badgeText = result.badges?.length ? ` Badges: ${result.badges.join(', ')}.` : '';
+        resultsPanel.innerHTML = `<div class="solve-flash correct">Correct! +${result.xp_awarded || 0} XP awarded.${escapeHtml(badgeText)}</div>`;
+        appendTable(resultsPanel, result);
+      } else {
+        resultsPanel.innerHTML = '<div class="solve-flash warning">Wrong answer - try again.</div>';
+        appendTable(resultsPanel, result);
+      }
+
+      if (currentSuggestedChart) {
+        chartType.value = currentSuggestedChart;
+        chartMessage.textContent = `Suggested chart: ${currentSuggestedChart}. You can override it.`;
+      } else {
+        chartMessage.textContent = 'No chart suggestion for this result shape.';
+      }
+
+      renderChart();
+      submissionsLoaded = false;
+    } finally {
+      setLoadingState(runButton, false, 'Run Query');
+    }
   }
 
   async function renderChart() {
@@ -569,7 +619,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rows = response.submissions || [];
 
     if (!rows.length) {
-      submissionsPanel.innerHTML = '<div class="empty-state">No submissions yet.</div>';
+      submissionsPanel.innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M6 2h9l5 5v15H6V2Zm8 1.5V8h4.5L14 3.5ZM8 11h10v2H8v-2Zm0 4h10v2H8v-2Z"/></svg><p>No submissions yet - solve a problem to get started.</p></div>';
       return;
     }
 
@@ -600,6 +650,56 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll(panelSelector).forEach((panel) => panel.classList.remove('active'));
     document.querySelector(`${buttonSelector}[data-tab="${key}"], ${buttonSelector}[data-schema-tab="${key}"]`)?.classList.add('active');
     document.getElementById(`${panelPrefix}${key}`)?.classList.add('active');
+  }
+
+  function ensureFallbackEditor(message) {
+    if (!editorHost || fallbackEditor) {
+      return;
+    }
+
+    editorHost.innerHTML = '';
+    fallbackEditor = document.createElement('textarea');
+    fallbackEditor.className = 'fallback-sql-editor';
+    fallbackEditor.spellcheck = false;
+    fallbackEditor.value = config.starterQuery || '';
+    fallbackEditor.setAttribute('aria-label', 'SQL editor');
+    editorHost.appendChild(fallbackEditor);
+
+    if (message) {
+      resultsPanel.innerHTML = `<div class="solve-flash warning">${escapeHtml(message)}</div>`;
+    }
+  }
+
+  function getEditorValue() {
+    if (editor) {
+      return editor.getValue();
+    }
+
+    if (fallbackEditor) {
+      return fallbackEditor.value;
+    }
+
+    return '';
+  }
+
+  function setEditorValue(value) {
+    if (editor) {
+      editor.setValue(value);
+      return;
+    }
+
+    if (fallbackEditor) {
+      fallbackEditor.value = value;
+    }
+  }
+
+  function focusEditor() {
+    if (editor) {
+      editor.focus();
+      return;
+    }
+
+    fallbackEditor?.focus();
   }
 
   async function postJson(url, payload) {
@@ -637,5 +737,20 @@ document.addEventListener('DOMContentLoaded', () => {
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#039;');
+  }
+
+  function setLoadingState(button, isLoading, label) {
+    if (!button) {
+      return;
+    }
+
+    if (isLoading) {
+      button.disabled = true;
+      button.innerHTML = `<span class="spinner" aria-hidden="true"></span>${escapeHtml(label)}...`;
+      return;
+    }
+
+    button.disabled = false;
+    button.innerHTML = `${escapeHtml(label)} <span class="muted">(Ctrl+Enter)</span>`;
   }
 });

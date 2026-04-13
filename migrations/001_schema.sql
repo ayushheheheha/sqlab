@@ -3,6 +3,9 @@ CREATE TABLE users (
     username VARCHAR(50) NOT NULL UNIQUE,
     email VARCHAR(120) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
+    email_verified_at TIMESTAMP NULL DEFAULT NULL,
+    google_id VARCHAR(191) NULL UNIQUE,
+    auth_provider ENUM('password', 'google', 'password+google') NOT NULL DEFAULT 'password',
     role ENUM('student', 'admin') NOT NULL DEFAULT 'student',
     xp INT NOT NULL DEFAULT 0,
     streak INT NOT NULL DEFAULT 0,
@@ -87,13 +90,26 @@ CREATE TABLE user_badges (
     CONSTRAINT fk_user_badges_badge FOREIGN KEY (badge_id) REFERENCES badges(id) ON DELETE CASCADE
 );
 
+CREATE TABLE email_verifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    otp_hash VARCHAR(255) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    attempts TINYINT NOT NULL DEFAULT 0,
+    resend_available_at DATETIME NOT NULL,
+    last_sent_at DATETIME NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_email_verifications_user (user_id),
+    CONSTRAINT fk_email_verifications_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE USER IF NOT EXISTS 'sqlab_sandbox'@'localhost' IDENTIFIED BY 'SandboxPass!99';
 GRANT SELECT ON sqlab_datasets.* TO 'sqlab_sandbox'@'localhost';
 FLUSH PRIVILEGES;
 
-INSERT INTO users (username, email, password_hash, role, xp, streak, last_active)
+INSERT INTO users (username, email, password_hash, email_verified_at, role, xp, streak, last_active)
 VALUES
-('admin', 'admin@sqlab.dev', '$2y$12$ZRpCpetkL3jD9JZoLK95V.eT6W6FKSWTfkcWdrZZBClE3k3Otj7.y', 'admin', 0, 0, CURDATE());
+('admin', 'admin@sqlab.dev', '$2y$12$ZRpCpetkL3jD9JZoLK95V.eT6W6FKSWTfkcWdrZZBClE3k3Otj7.y', NOW(), 'admin', 0, 0, CURDATE());
 
 INSERT INTO datasets (name, description, schema_sql, seed_sql)
 VALUES

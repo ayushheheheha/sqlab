@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const toggle = document.getElementById('leaderboardToggle');
   const podium = document.getElementById('leaderboardPodium');
   const rows = document.getElementById('leaderboardRows');
+  const emptyCard = '<div class="card empty-state"><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M7 2h10v3h3v4c0 2.2-1.8 4-4 4h-1.2A4.8 4.8 0 0 1 13 15.8V18h4v2H7v-2h4v-2.2A4.8 4.8 0 0 1 9.2 13H8c-2.2 0-4-1.8-4-4V5h3V2Zm10 5v2a2 2 0 0 0 2-2V7h-2ZM5 7v2a2 2 0 0 0 2 2V7H5Z"/></svg><p>No leaderboard data yet.</p></div>';
 
   loadLeaderboard('alltime');
 
@@ -40,12 +41,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const rankClass = user.rank === 1 ? 'gold' : (user.rank === 2 ? 'silver' : 'bronze');
         return `<article class="podium-item ${rankClass}"><div class="podium-avatar">${initials}</div><strong>#${user.rank} ${escapeHtml(user.username)}</strong><p>${user.xp} XP</p></article>`;
       }).join('')
-      : '<div class="card empty-state">No leaderboard data yet.</div>';
+      : emptyCard;
   }
 
   function renderRows(data) {
     if (!data.length) {
-      rows.innerHTML = '<tr><td colspan="6">No leaderboard entries yet.</td></tr>';
+      rows.innerHTML = '<tr><td colspan="6"><div class="empty-state"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M3 3h18v2H3V3Zm2 5h14v2H5V8Zm2 5h10v2H7v-2Zm2 5h6v2H9v-2Z"/></svg><p>No leaderboard entries yet.</p></div></td></tr>';
       return;
     }
 

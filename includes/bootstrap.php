@@ -65,3 +65,45 @@ function is_active_path(string $path): bool
     return $current === $target;
 }
 
+function csrf_token(): string
+{
+    if (!isset($_SESSION['_csrf']) || !is_string($_SESSION['_csrf']) || $_SESSION['_csrf'] === '') {
+        $_SESSION['_csrf'] = bin2hex(random_bytes(32));
+    }
+
+    return $_SESSION['_csrf'];
+}
+
+function csrf_input(): string
+{
+    return '<input type="hidden" name="_csrf" value="' . e(csrf_token()) . '">';
+}
+
+function verify_csrf_request(): void
+{
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+        return;
+    }
+
+    $provided = (string) ($_POST['_csrf'] ?? '');
+    $stored = (string) ($_SESSION['_csrf'] ?? '');
+
+    if ($stored === '' || $provided === '' || !hash_equals($stored, $provided)) {
+        http_response_code(419);
+        exit('Invalid CSRF token.');
+    }
+}
+
+function set_auth_flash(string $type, string $message): void
+{
+    $_SESSION['auth_flash'] = ['type' => $type, 'message' => $message];
+}
+
+function pull_auth_flash(): ?array
+{
+    $flash = $_SESSION['auth_flash'] ?? null;
+    unset($_SESSION['auth_flash']);
+
+    return is_array($flash) ? $flash : null;
+}
+

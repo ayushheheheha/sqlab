@@ -6,7 +6,7 @@ final class User
 {
     public static function findById(int $id): ?array
     {
-        $stmt = DB::getConnection()->prepare('SELECT id, username, email, role, xp, streak, last_active, created_at FROM users WHERE id = :id LIMIT 1');
+        $stmt = DB::getConnection()->prepare('SELECT id, username, email, role, xp, streak, last_active, created_at, email_verified_at, google_id, auth_provider FROM users WHERE id = :id LIMIT 1');
         $stmt->execute(['id' => $id]);
         $user = $stmt->fetch();
 
@@ -19,6 +19,26 @@ final class User
             'SELECT id, username, email, role, xp, streak, last_active, created_at
              FROM users
              ORDER BY created_at DESC'
+        )->fetchAll();
+    }
+
+    public static function allWithAdminStats(): array
+    {
+        return DB::getConnection()->query(
+            'SELECT
+                u.id,
+                u.username,
+                u.email,
+                u.role,
+                u.xp,
+                u.streak,
+                u.last_active,
+                u.created_at,
+                COUNT(DISTINCT CASE WHEN up.status = "solved" THEN up.problem_id END) AS solved_count
+             FROM users u
+             LEFT JOIN user_progress up ON up.user_id = u.id
+             GROUP BY u.id
+             ORDER BY u.created_at DESC'
         )->fetchAll();
     }
 
@@ -201,5 +221,36 @@ final class User
 
             throw $throwable;
         }
+    }
+
+    public static function toggleRole(int $userId): void
+    {
+        $stmt = DB::getConnection()->prepare(
+            'UPDATE users
+             SET role = CASE WHEN role = "admin" THEN "student" ELSE "admin" END
+             WHERE id = :id'
+        );
+        $stmt->execute(['id' => $userId]);
+    }
+
+    public static function resetPassword(int $userId): string
+    {
+        $tempPassword = self::generateTempPassword();
+        $hash = password_hash($tempPassword, PASSWORD_BCRYPT, ['cost' => 12]);
+        $stmt = DB::getConnection()->prepare('UPDATE users SET password_hash = :hash WHERE id = :id');
+        $stmt->execute(['hash' => $hash, 'id' => $userId]);
+
+        return $tempPassword;
+    }
+
+    public static function deleteById(int $userId): void
+    {
+        $stmt = DB::getConnection()->prepare('DELETE FROM users WHERE id = :id');
+        $stmt->execute(['id' => $userId]);
+    }
+
+    private static function generateTempPassword(): string
+    {
+        return 'Tmp' . bin2hex(random_bytes(4)) . '!';
     }
 }

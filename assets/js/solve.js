@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const chartMessage = document.getElementById('chartMessage');
   const chartCanvas = document.getElementById('resultChart');
   const chartTabButton = document.getElementById('chartTabButton');
+  const runButton = document.getElementById('runQuery');
 
   const currentTheme = () => document.documentElement.getAttribute('data-theme') === 'dark' ? 'vs-dark' : 'vs';
   const chartColor = () => document.documentElement.getAttribute('data-theme') === 'dark' ? 'rgba(91, 91, 214, 0.7)' : 'rgba(31, 42, 68, 0.7)';
@@ -63,6 +64,20 @@ document.addEventListener('DOMContentLoaded', () => {
   schemaModal?.addEventListener('click', (event) => {
     if (event.target === schemaModal) {
       schemaModal.hidden = true;
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && String(event.key).toLowerCase() === 'k') {
+      event.preventDefault();
+      editor?.focus();
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      if (schemaModal && !schemaModal.hidden) {
+        schemaModal.hidden = true;
+      }
     }
   });
 
@@ -111,33 +126,43 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    resultsPanel.innerHTML = '<div class="empty-state">Running query...</div>';
-    const result = await postJson(config.endpoints.execute, { problem_id: config.problemId, query: editor.getValue() });
-    executionTime.textContent = result.execution_ms ? `${result.execution_ms} ms` : '';
-    lastResult = (result.success && Number(result.row_count) > 0) ? result : null;
-    chartTabButton.disabled = !(result.success && Number(result.row_count) > 0);
-    currentSuggestedChart = result.success ? suggestChartType(result) : null;
-
-    if (!result.success) {
-      resultsPanel.innerHTML = `<div class="solve-flash error">${escapeHtml(result.error || 'Query failed.')}</div>`;
-    } else if (result.is_correct) {
-      const badgeText = result.badges?.length ? ` Badges: ${result.badges.join(', ')}.` : '';
-      resultsPanel.innerHTML = `<div class="solve-flash correct">Correct! +${result.xp_awarded || 0} XP awarded.${escapeHtml(badgeText)}</div>`;
-      appendTable(resultsPanel, result);
-    } else {
-      resultsPanel.innerHTML = '<div class="solve-flash warning">Wrong answer - try again.</div>';
-      appendTable(resultsPanel, result);
+    if (runButton?.disabled) {
+      return;
     }
 
-    if (currentSuggestedChart) {
-      chartType.value = currentSuggestedChart;
-      chartMessage.textContent = `Suggested chart: ${currentSuggestedChart}. You can override it.`;
-    } else {
-      chartMessage.textContent = 'No chart suggestion for this result shape.';
-    }
+    setLoadingState(runButton, true, 'Run Query');
 
-    renderChart();
-    submissionsLoaded = false;
+    try {
+      resultsPanel.innerHTML = '<div class="empty-state">Running query...</div>';
+      const result = await postJson(config.endpoints.execute, { problem_id: config.problemId, query: editor.getValue() });
+      executionTime.textContent = result.execution_ms ? `${result.execution_ms} ms` : '';
+      lastResult = (result.success && Number(result.row_count) > 0) ? result : null;
+      chartTabButton.disabled = !(result.success && Number(result.row_count) > 0);
+      currentSuggestedChart = result.success ? suggestChartType(result) : null;
+
+      if (!result.success) {
+        resultsPanel.innerHTML = `<div class="solve-flash error">${escapeHtml(result.error || 'Query failed.')}</div>`;
+      } else if (result.is_correct) {
+        const badgeText = result.badges?.length ? ` Badges: ${result.badges.join(', ')}.` : '';
+        resultsPanel.innerHTML = `<div class="solve-flash correct">Correct! +${result.xp_awarded || 0} XP awarded.${escapeHtml(badgeText)}</div>`;
+        appendTable(resultsPanel, result);
+      } else {
+        resultsPanel.innerHTML = '<div class="solve-flash warning">Wrong answer - try again.</div>';
+        appendTable(resultsPanel, result);
+      }
+
+      if (currentSuggestedChart) {
+        chartType.value = currentSuggestedChart;
+        chartMessage.textContent = `Suggested chart: ${currentSuggestedChart}. You can override it.`;
+      } else {
+        chartMessage.textContent = 'No chart suggestion for this result shape.';
+      }
+
+      renderChart();
+      submissionsLoaded = false;
+    } finally {
+      setLoadingState(runButton, false, 'Run Query');
+    }
   }
 
   async function renderChart() {
@@ -569,7 +594,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rows = response.submissions || [];
 
     if (!rows.length) {
-      submissionsPanel.innerHTML = '<div class="empty-state">No submissions yet.</div>';
+      submissionsPanel.innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M6 2h9l5 5v15H6V2Zm8 1.5V8h4.5L14 3.5ZM8 11h10v2H8v-2Zm0 4h10v2H8v-2Z"/></svg><p>No submissions yet - solve a problem to get started.</p></div>';
       return;
     }
 
@@ -637,5 +662,20 @@ document.addEventListener('DOMContentLoaded', () => {
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#039;');
+  }
+
+  function setLoadingState(button, isLoading, label) {
+    if (!button) {
+      return;
+    }
+
+    if (isLoading) {
+      button.disabled = true;
+      button.innerHTML = `<span class="spinner" aria-hidden="true"></span>${escapeHtml(label)}...`;
+      return;
+    }
+
+    button.disabled = false;
+    button.innerHTML = `${escapeHtml(label)} <span class="muted">(Ctrl+Enter)</span>`;
   }
 });

@@ -33,6 +33,7 @@ if ($schemaSql === '') {
 
 $charset = $_ENV['DB_CHARSET'] ?? 'utf8mb4';
 $tempDbName = 'sqlab_schema_' . $datasetId . '_' . str_replace('.', '', uniqid('', true));
+// TODO(security): Dynamic SQL is required for ephemeral schema database names.
 $pdo->exec(sprintf('CREATE DATABASE `%s` CHARACTER SET %s COLLATE %s_unicode_ci', $tempDbName, $charset, $charset));
 
 try {
@@ -98,6 +99,7 @@ try {
 
     echo json_encode(['tables' => array_values($tables)], JSON_THROW_ON_ERROR);
 } finally {
+    // TODO(security): Dynamic SQL is required for ephemeral schema database names.
     $pdo->exec(sprintf('DROP DATABASE IF EXISTS `%s`', $tempDbName));
 }
 
