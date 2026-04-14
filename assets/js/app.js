@@ -55,9 +55,33 @@ document.addEventListener('DOMContentLoaded', () => {
   const toggle = document.querySelector('[data-theme-toggle]');
   const storedTheme = localStorage.getItem('sqlab-theme');
 
+  const moonIcon = `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4 7 7 0 1 0 20 14.5z"></path>
+    </svg>
+  `;
+  const sunIcon = `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="4"></circle>
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+    </svg>
+  `;
+
+  function syncThemeToggleIcon() {
+    if (!toggle) {
+      return;
+    }
+
+    const isDark = html.getAttribute('data-theme') === 'dark';
+    toggle.innerHTML = isDark ? sunIcon : moonIcon;
+    toggle.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+  }
+
   if (storedTheme === 'dark') {
     html.setAttribute('data-theme', 'dark');
   }
+
+  syncThemeToggleIcon();
 
   if (toggle) {
     toggle.addEventListener('click', () => {
@@ -70,6 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       localStorage.setItem('sqlab-theme', nextTheme);
+      syncThemeToggleIcon();
     });
   }
 
