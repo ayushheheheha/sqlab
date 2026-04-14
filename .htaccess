@@ -1,2 +1,20 @@
-php_flag display_errors Off
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+	RewriteEngine On
+
+	# Serve the app from /public when project root is exposed.
+	RewriteRule ^$ public/index.php [L]
+
+	# If request is already under /public, do nothing.
+	RewriteRule ^public/ - [L]
+
+	# Keep real files/directories at root accessible (assets, etc.).
+	RewriteCond %{REQUEST_FILENAME} -f [OR]
+	RewriteCond %{REQUEST_FILENAME} -d
+	RewriteRule ^ - [L]
+
+	# Route app entry files (dashboard.php, api/*, etc.) to /public.
+	RewriteRule ^(.*)$ public/$1 [L,QSA]
+</IfModule>
 

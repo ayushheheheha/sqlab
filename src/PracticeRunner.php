@@ -6,12 +6,18 @@ final class PracticeRunner
 {
     private int $userId;
     private ?string $tempDbName = null;
+    private bool $sharedHostingMode = false;
+    private string $tablePrefix = '';
+    private array $tableMap = [];
     private const SESSION_KEY = 'practice_sandbox_db';
+    private const SESSION_TABLE_MAP_KEY = 'practice_sandbox_tables';
+    private const SESSION_PREFIX_KEY = 'practice_sandbox_prefix';
     private static bool $staleCleanupChecked = false;
 
     public function __construct(int $userId)
     {
         $this->userId = $userId;
+        $this->sharedHostingMode = $this->isSharedHostingMode();
     }
 
     public function execute(string $query): array
@@ -21,7 +27,7 @@ final class PracticeRunner
         $query = trim($query);
         $query = preg_replace('/;\s*$/', '', $query) ?? $query;
 
-        if ($this->tempDbName === null) {
+        if (!$this->sharedHostingMode && $this->tempDbName === null) {
             return $this->errorResult('Sandbox is not ready.');
         }
 
@@ -34,14 +40,19 @@ final class PracticeRunner
         }
 
         try {
-            $pdo = DB::sandboxConnection($this->tempDbName);
+            $pdo = $this->sharedHostingMode ? DB::getConnection() : DB::sandboxConnection((string) $this->tempDbName);
             $this->applyExecutionLimit($pdo);
             $statementType = strtoupper((string) strtok(ltrim($query), " \t\r\n"));
+            $queryToRun = $this->sharedHostingMode ? $this->rewritePracticeQuery($query, $statementType) : $query;
 
             $startedAt = microtime(true);
-            $stmt = $pdo->prepare($query);
+            $stmt = $pdo->prepare($queryToRun);
             $stmt->execute();
             $executionMs = (int) round((microtime(true) - $startedAt) * 1000);
+
+            if ($this->sharedHostingMode) {
+                $this->persistSandboxState();
+            }
 
             if ($stmt->columnCount() === 0) {
                 return [
@@ -91,6 +102,16 @@ final class PracticeRunner
 
     public function destroySandbox(): void
     {
+        if ($this->sharedHostingMode) {
+            $this->tableMap = $this->loadSessionTableMap();
+            $this->dropMappedTables(DB::getConnection(), $this->tableMap);
+            unset($_SESSION[self::SESSION_TABLE_MAP_KEY], $_SESSION[self::SESSION_PREFIX_KEY], $_SESSION[self::SESSION_KEY]);
+            $this->tableMap = [];
+            $this->tablePrefix = '';
+            $this->tempDbName = null;
+            return;
+        }
+
         $this->tempDbName = $this->loadSessionDbName();
 
         if ($this->tempDbName === null) {
@@ -112,6 +133,38 @@ final class PracticeRunner
 
     public function destroyAllForUser(): int
     {
+        if ($this->sharedHostingMode) {
+            $root = DB::getConnection();
+            $pattern = sprintf('sqlab_practice_%d_', max(0, $this->userId)) . '%';
+            $stmt = $root->prepare(
+                'SELECT TABLE_NAME
+                 FROM INFORMATION_SCHEMA.TABLES
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME LIKE :name_like'
+            );
+            $stmt->execute(['name_like' => $pattern]);
+
+            $dropped = 0;
+            foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $tableName) {
+                if (!preg_match('/^sqlab_practice_\d+_[a-z0-9]+_[a-zA-Z0-9_]+$/', (string) $tableName)) {
+                    continue;
+                }
+
+                try {
+                    $root->exec(sprintf('DROP TABLE IF EXISTS `%s`', (string) $tableName));
+                    $dropped++;
+                } catch (Throwable) {
+                }
+            }
+
+            unset($_SESSION[self::SESSION_TABLE_MAP_KEY], $_SESSION[self::SESSION_PREFIX_KEY], $_SESSION[self::SESSION_KEY]);
+            $this->tableMap = [];
+            $this->tablePrefix = '';
+            $this->tempDbName = null;
+
+            return $dropped;
+        }
+
         $root = DB::getConnection();
         $pattern = sprintf('sqlab_practice_%d_', max(0, $this->userId));
         $stmt = $root->prepare(
@@ -151,6 +204,12 @@ final class PracticeRunner
     public static function cleanupStaleSandboxes(int $maxAgeHours = 24): int
     {
         $maxAgeHours = max(1, $maxAgeHours);
+        $sharedHostingMode = strtolower((string) ($_ENV['SHARED_HOSTING_MODE'] ?? 'false')) === 'true';
+
+        if ($sharedHostingMode) {
+            return self::cleanupStalePracticeTables($maxAgeHours);
+        }
+
         $root = DB::getConnection();
         $stmt = $root->query(
             'SELECT SCHEMA_NAME, CREATE_TIME
@@ -199,6 +258,19 @@ final class PracticeRunner
                 self::cleanupStaleSandboxes((int) ($_ENV['PRACTICE_SANDBOX_MAX_AGE_HOURS'] ?? 24));
             } catch (Throwable) {
             }
+        }
+
+        if ($this->sharedHostingMode) {
+            $this->tableMap = $this->loadSessionTableMap();
+            $this->tablePrefix = (string) ($_SESSION[self::SESSION_PREFIX_KEY] ?? '');
+
+            if ($this->tablePrefix === '') {
+                $this->tablePrefix = sprintf('sqlab_practice_%d_%s_', max(0, $this->userId), str_replace('.', '', uniqid('', true)));
+                $_SESSION[self::SESSION_PREFIX_KEY] = $this->tablePrefix;
+            }
+
+            $this->tempDbName = (string) ($_ENV['DB_NAME'] ?? '');
+            return;
         }
 
         $existing = $this->loadSessionDbName();
@@ -330,6 +402,10 @@ final class PracticeRunner
 
     private function listTables(PDO $pdo): array
     {
+        if ($this->sharedHostingMode) {
+            return array_values(array_keys($this->tableMap));
+        }
+
         $rows = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_NUM);
 
         return array_map(static fn (array $row): string => (string) ($row[0] ?? ''), $rows);
@@ -367,7 +443,8 @@ final class PracticeRunner
         }
 
         try {
-            $stmt = $pdo->query(sprintf('DESCRIBE `%s`', $table));
+            $physicalTable = $this->sharedHostingMode ? ($this->tableMap[$table] ?? $table) : $table;
+            $stmt = $pdo->query(sprintf('DESCRIBE `%s`', $physicalTable));
             $rows = $stmt->fetchAll();
 
             return array_map(static function (array $row): array {
@@ -396,7 +473,8 @@ final class PracticeRunner
         }
 
         try {
-            $stmt = $pdo->query(sprintf('SELECT * FROM `%s` LIMIT 25', $table));
+            $physicalTable = $this->sharedHostingMode ? ($this->tableMap[$table] ?? $table) : $table;
+            $stmt = $pdo->query(sprintf('SELECT * FROM `%s` LIMIT 25', $physicalTable));
             $rows = $stmt->fetchAll();
 
             return [
@@ -412,5 +490,121 @@ final class PracticeRunner
     private function sandboxUser(): string
     {
         return str_replace("'", "''", $_ENV['DB_SANDBOX_USER'] ?? 'sqlab_sandbox');
+    }
+
+    private function rewritePracticeQuery(string $query, string $statementType): string
+    {
+        if ($query === '') {
+            return $query;
+        }
+
+        if ($statementType === 'CREATE') {
+            $logical = $this->extractTargetTable($query, $statementType);
+
+            if ($logical !== null && !isset($this->tableMap[$logical])) {
+                $this->tableMap[$logical] = $this->tablePrefix . $logical;
+            }
+        }
+
+        $rewritten = $this->rewriteSqlWithMap($query, $this->tableMap);
+
+        if ($statementType === 'DROP') {
+            $logical = $this->extractTargetTable($query, $statementType);
+            if ($logical !== null) {
+                unset($this->tableMap[$logical]);
+            }
+        }
+
+        return $rewritten;
+    }
+
+    private function rewriteSqlWithMap(string $sql, array $tableMap): string
+    {
+        return sqlab_rewrite_sql_with_map($sql, $tableMap);
+    }
+
+    private function loadSessionTableMap(): array
+    {
+        $raw = $_SESSION[self::SESSION_TABLE_MAP_KEY] ?? [];
+
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        $map = [];
+
+        foreach ($raw as $logical => $physical) {
+            $logicalName = (string) $logical;
+            $physicalName = (string) $physical;
+
+            if (!preg_match('/^[a-zA-Z0-9_]+$/', $logicalName)) {
+                continue;
+            }
+
+            if (!preg_match('/^sqlab_practice_\d+_[a-z0-9]+_[a-zA-Z0-9_]+$/', $physicalName)) {
+                continue;
+            }
+
+            $map[$logicalName] = $physicalName;
+        }
+
+        return $map;
+    }
+
+    private function persistSandboxState(): void
+    {
+        $_SESSION[self::SESSION_TABLE_MAP_KEY] = $this->tableMap;
+        $_SESSION[self::SESSION_PREFIX_KEY] = $this->tablePrefix;
+    }
+
+    private function dropMappedTables(PDO $pdo, array $tableMap): void
+    {
+        foreach (array_reverse(array_values($tableMap)) as $tableName) {
+            try {
+                $pdo->exec(sprintf('DROP TABLE IF EXISTS `%s`', $tableName));
+            } catch (Throwable) {
+            }
+        }
+    }
+
+    private static function cleanupStalePracticeTables(int $maxAgeHours): int
+    {
+        $root = DB::getConnection();
+        $stmt = $root->query(
+            'SELECT TABLE_NAME, CREATE_TIME
+             FROM INFORMATION_SCHEMA.TABLES
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME LIKE "sqlab_practice_%"'
+        );
+
+        $dropped = 0;
+        $cutoff = time() - ($maxAgeHours * 3600);
+
+        foreach ($stmt->fetchAll() as $row) {
+            $tableName = (string) ($row['TABLE_NAME'] ?? '');
+            $createTimeRaw = (string) ($row['CREATE_TIME'] ?? '');
+
+            if (!preg_match('/^sqlab_practice_\d+_[a-z0-9]+_[a-zA-Z0-9_]+$/', $tableName)) {
+                continue;
+            }
+
+            $createTs = strtotime($createTimeRaw ?: '');
+            if ($createTs === false || $createTs > $cutoff) {
+                continue;
+            }
+
+            try {
+                $root->exec(sprintf('DROP TABLE IF EXISTS `%s`', $tableName));
+                $dropped++;
+            } catch (Throwable) {
+            }
+        }
+
+        return $dropped;
+    }
+
+    private function isSharedHostingMode(): bool
+    {
+        return strtolower((string) ($_ENV['SHARED_HOSTING_MODE'] ?? 'false')) === 'true';
     }
 }

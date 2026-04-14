@@ -49,8 +49,7 @@ try {
     $result = $runner->run((string) $problem['expected_query']);
     echo json_encode($result);
 } catch (Throwable $throwable) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $throwable->getMessage()]);
+    json_internal_error($throwable);
 } finally {
     if ($runner instanceof QueryRunner) {
         $runner->teardown();

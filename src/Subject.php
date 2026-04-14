@@ -13,8 +13,20 @@ final class Subject
         }
 
         try {
-            $stmt = DB::getConnection()->query("SHOW TABLES LIKE 'subjects'");
-            self::$ready = (bool) $stmt->fetchColumn();
+            $pdo = DB::getConnection();
+            $subjectsTable = (bool) $pdo->query("SHOW TABLES LIKE 'subjects'")->fetchColumn();
+
+            if (!$subjectsTable) {
+                self::$ready = false;
+                return self::$ready;
+            }
+
+            $subjectIdColumnStmt = $pdo->query(
+                "SHOW COLUMNS FROM problems LIKE 'subject_id'"
+            );
+            $subjectIdColumn = (bool) $subjectIdColumnStmt->fetchColumn();
+
+            self::$ready = $subjectIdColumn;
         } catch (Throwable) {
             self::$ready = false;
         }
@@ -122,25 +134,30 @@ final class Subject
             }, $subjects);
         }
 
-        $stmt = DB::getConnection()->prepare(
-            'SELECT
-                s.id,
-                s.slug,
-                s.name,
-                s.description,
-                s.sort_order,
-                COUNT(DISTINCT CASE WHEN p.is_active = 1 THEN p.id END) AS total_problems,
-                COUNT(DISTINCT CASE WHEN up.status = "solved" THEN up.problem_id END) AS solved_count
-             FROM subjects s
-             LEFT JOIN problems p ON p.subject_id = s.id
-             LEFT JOIN user_progress up ON up.problem_id = p.id AND up.user_id = :user_id
-             WHERE s.is_active = 1
-             GROUP BY s.id
-             ORDER BY s.sort_order, s.id'
-        );
-        $stmt->execute(['user_id' => $userId]);
+        try {
+            $stmt = DB::getConnection()->prepare(
+                'SELECT
+                    s.id,
+                    s.slug,
+                    s.name,
+                    s.description,
+                    s.sort_order,
+                    COUNT(DISTINCT CASE WHEN p.is_active = 1 THEN p.id END) AS total_problems,
+                    COUNT(DISTINCT CASE WHEN up.status = "solved" THEN up.problem_id END) AS solved_count
+                 FROM subjects s
+                 LEFT JOIN problems p ON p.subject_id = s.id
+                 LEFT JOIN user_progress up ON up.problem_id = p.id AND up.user_id = :user_id
+                 WHERE s.is_active = 1
+                 GROUP BY s.id
+                 ORDER BY s.sort_order, s.id'
+            );
+            $stmt->execute(['user_id' => $userId]);
 
-        return $stmt->fetchAll();
+            return $stmt->fetchAll();
+        } catch (Throwable) {
+            self::$ready = false;
+            return self::statsForUser($userId);
+        }
     }
 
     private static function fallbackSubjects(): array

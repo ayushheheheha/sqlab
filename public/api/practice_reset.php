@@ -14,12 +14,13 @@ if (!$user) {
     exit;
 }
 
+verify_api_csrf_request();
+
 $runner = new PracticeRunner((int) $user['id']);
 
 try {
     $runner->resetSandbox();
     echo json_encode(['success' => true, 'message' => 'Practice database reset.']);
 } catch (Throwable $throwable) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $throwable->getMessage()]);
+    json_internal_error($throwable);
 }

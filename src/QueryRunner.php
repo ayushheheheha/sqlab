@@ -7,6 +7,9 @@ final class QueryRunner
     private int $problemId;
     private int $userId;
     private ?string $tempDbName = null;
+    private bool $sharedHostingMode = false;
+    private string $tablePrefix = '';
+    private array $tableMap = [];
     private ?array $problem = null;
     private string $expectedQuery = '';
 
@@ -14,6 +17,7 @@ final class QueryRunner
     {
         $this->problemId = $problemId;
         $this->userId = (int) ($_SESSION['user_id'] ?? 0);
+        $this->sharedHostingMode = $this->isSharedHostingMode();
     }
 
     public function setupSandbox(): void
@@ -25,37 +29,43 @@ final class QueryRunner
         }
 
         $this->expectedQuery = (string) $this->problem['expected_query'];
-        $this->tempDbName = sprintf('sqlab_sandbox_%d_%s', max(0, $this->userId), str_replace('.', '', uniqid('', true)));
-        $charset = $_ENV['DB_CHARSET'] ?? 'utf8mb4';
         $rootPdo = DB::getConnection();
 
-        $rootPdo->exec(sprintf('CREATE DATABASE `%s` CHARACTER SET %s COLLATE %s_unicode_ci', $this->tempDbName, $charset, $charset));
-        $rootPdo->exec(sprintf("GRANT SELECT ON `%s`.* TO '%s'@'localhost'", $this->tempDbName, $this->sandboxUser()));
+        if ($this->sharedHostingMode) {
+            $this->tablePrefix = sprintf('sqlab_q_%d_%d_%s_', max(0, $this->userId), $this->problemId, str_replace('.', '', uniqid('', true)));
+            $this->tableMap = $this->buildTableMap($this->problem, $this->tablePrefix);
+            $rootSandbox = $rootPdo;
+        } else {
+            $this->tempDbName = sprintf('sqlab_sandbox_%d_%s', max(0, $this->userId), str_replace('.', '', uniqid('', true)));
+            $charset = $_ENV['DB_CHARSET'] ?? 'utf8mb4';
+            $rootPdo->exec(sprintf('CREATE DATABASE `%s` CHARACTER SET %s COLLATE %s_unicode_ci', $this->tempDbName, $charset, $charset));
+            $rootPdo->exec(sprintf("GRANT SELECT ON `%s`.* TO '%s'@'localhost'", $this->tempDbName, $this->sandboxUser()));
 
-        $rootSandbox = new PDO(
-            sprintf(
-                'mysql:host=%s;port=%s;dbname=%s;charset=%s',
-                $_ENV['DB_HOST'] ?? '127.0.0.1',
-                $_ENV['DB_PORT'] ?? '3306',
-                $this->tempDbName,
-                $charset
-            ),
-            $_ENV['DB_USER'] ?? '',
-            $_ENV['DB_PASS'] ?? '',
-            [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES => false,
-            ]
-        );
+            $rootSandbox = new PDO(
+                sprintf(
+                    'mysql:host=%s;port=%s;dbname=%s;charset=%s',
+                    $_ENV['DB_HOST'] ?? '127.0.0.1',
+                    $_ENV['DB_PORT'] ?? '3306',
+                    $this->tempDbName,
+                    $charset
+                ),
+                $_ENV['DB_USER'] ?? '',
+                $_ENV['DB_PASS'] ?? '',
+                [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES => false,
+                ]
+            );
+        }
 
         foreach ($this->problem['dataset_records'] as $dataset) {
-            self::runSqlBatch($rootSandbox, (string) $dataset['schema_sql']);
-            self::runSqlBatch($rootSandbox, (string) $dataset['seed_sql']);
+            self::runSqlBatch($rootSandbox, (string) $dataset['schema_sql'], $this->tableMap);
+            self::runSqlBatch($rootSandbox, (string) $dataset['seed_sql'], $this->tableMap);
         }
 
         if (!empty($this->problem['dataset_sql'])) {
-            self::runSqlBatch($rootSandbox, (string) $this->problem['dataset_sql']);
+            self::runSqlBatch($rootSandbox, (string) $this->problem['dataset_sql'], $this->tableMap);
         }
     }
 
@@ -64,7 +74,7 @@ final class QueryRunner
         $userQuery = trim($userQuery);
         $userQuery = preg_replace('/;\s*$/', '', $userQuery) ?? $userQuery;
 
-        if ($this->tempDbName === null) {
+        if (!$this->sharedHostingMode && $this->tempDbName === null) {
             return $this->errorResult('Sandbox is not ready.');
         }
 
@@ -73,11 +83,12 @@ final class QueryRunner
         }
 
         try {
-            $pdo = DB::sandboxConnection($this->tempDbName);
+            $pdo = $this->sharedHostingMode ? DB::getConnection() : DB::sandboxConnection((string) $this->tempDbName);
             $this->applyExecutionLimit($pdo);
+            $queryToRun = $this->rewriteSqlWithMap($userQuery, $this->tableMap);
 
             $startedAt = microtime(true);
-            $stmt = $pdo->query($userQuery);
+            $stmt = $pdo->query($queryToRun);
             $rows = $stmt->fetchAll();
             $executionMs = (int) round((microtime(true) - $startedAt) * 1000);
 
@@ -107,6 +118,12 @@ final class QueryRunner
 
     public function teardown(): void
     {
+        if ($this->sharedHostingMode) {
+            $this->dropMappedTables(DB::getConnection(), $this->tableMap);
+            $this->tableMap = [];
+            return;
+        }
+
         if ($this->tempDbName === null) {
             return;
         }
@@ -199,13 +216,68 @@ final class QueryRunner
         return $normalized;
     }
 
-    private static function runSqlBatch(PDO $pdo, string $sql): void
+    private static function runSqlBatch(PDO $pdo, string $sql, array $tableMap = []): void
     {
         foreach (array_filter(array_map('trim', preg_split('/;\s*(?:\r?\n|$)/', $sql) ?: [])) as $statement) {
             if ($statement !== '') {
-                $pdo->exec($statement);
+                $pdo->exec(self::rewriteSqlStatic($statement, $tableMap));
             }
         }
+    }
+
+    private function rewriteSqlWithMap(string $sql, array $tableMap): string
+    {
+        return self::rewriteSqlStatic($sql, $tableMap);
+    }
+
+    private static function rewriteSqlStatic(string $sql, array $tableMap): string
+    {
+        return sqlab_rewrite_sql_with_map($sql, $tableMap);
+    }
+
+    private function buildTableMap(array $problem, string $prefix): array
+    {
+        $names = [];
+
+        foreach (($problem['dataset_records'] ?? []) as $dataset) {
+            $names = [...$names, ...$this->extractCreatedTableNames((string) ($dataset['schema_sql'] ?? ''))];
+        }
+
+        $names = [...$names, ...$this->extractCreatedTableNames((string) ($problem['dataset_sql'] ?? ''))];
+        $names = array_values(array_unique(array_filter($names)));
+        $map = [];
+
+        foreach ($names as $name) {
+            $map[$name] = $prefix . $name;
+        }
+
+        return $map;
+    }
+
+    private function extractCreatedTableNames(string $sql): array
+    {
+        if ($sql === '') {
+            return [];
+        }
+
+        preg_match_all('/\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([a-zA-Z0-9_]+)`?/i', $sql, $matches);
+
+        return array_values(array_unique(array_map('strval', $matches[1] ?? [])));
+    }
+
+    private function dropMappedTables(PDO $pdo, array $tableMap): void
+    {
+        foreach (array_reverse(array_values($tableMap)) as $tableName) {
+            try {
+                $pdo->exec(sprintf('DROP TABLE IF EXISTS `%s`', $tableName));
+            } catch (Throwable) {
+            }
+        }
+    }
+
+    private function isSharedHostingMode(): bool
+    {
+        return strtolower((string) ($_ENV['SHARED_HOSTING_MODE'] ?? 'false')) === 'true';
     }
 
     private function sandboxUser(): string

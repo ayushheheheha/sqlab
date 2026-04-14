@@ -47,7 +47,7 @@ render_app_layout('Profile', $user, static function () use ($profileUser, $stats
         <div class="badge-list badge-row">
             <?php foreach ($badges as $badge): ?>
                 <div class="badge-tile <?= empty($badge['earned_at']) ? 'locked' : '' ?>">
-                    <div style="width:38px; margin:0 auto 8px;"><?= htmle((string) $badge['icon_svg']) ?></div>
+                    <div style="width:38px; margin:0 auto 8px;"><?= safe_inline_svg((string) $badge['icon_svg']) ?></div>
                     <strong><?= e($badge['name']) ?></strong>
                     <p class="muted"><?= empty($badge['earned_at']) ? 'Locked' : 'Earned' ?></p>
                 </div>
@@ -121,7 +121,7 @@ render_app_layout('Profile', $user, static function () use ($user, $stats, $badg
             <div class="grid">
                 <?php foreach ($badges as $badge): ?>
                     <div>
-                        <div style="width:32px; margin-bottom:8px;"><?= htmle((string) $badge['icon_svg']) ?></div>
+                        <div style="width:32px; margin-bottom:8px;"><?= safe_inline_svg((string) $badge['icon_svg']) ?></div>
                         <strong><?= e($badge['name']) ?></strong>
                         <p class="muted"><?= e($badge['description']) ?></p>
                     </div>

@@ -6,6 +6,7 @@ require_once dirname(__DIR__, 3) . '/includes/bootstrap.php';
 
 header('Content-Type: application/json');
 Auth::requireAdmin();
+verify_api_csrf_request();
 $user = Auth::getCurrentUser();
 $payload = json_decode(file_get_contents('php://input') ?: '{}', true);
 
@@ -91,8 +92,7 @@ try {
     $problemId = Problem::create($data);
     echo json_encode(['success' => true, 'problem_id' => $problemId, 'message' => 'Problem created.']);
 } catch (Throwable $throwable) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'message' => $throwable->getMessage()]);
+    json_internal_error($throwable);
 }
 
 function parse_non_sql_test_cases(string $raw): array

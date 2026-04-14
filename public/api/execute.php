@@ -14,6 +14,8 @@ if (!$user) {
     exit;
 }
 
+verify_api_csrf_request();
+
 $payload = json_decode(file_get_contents('php://input') ?: '{}', true);
 $problemId = (int) ($payload['problem_id'] ?? 0);
 $submission = trim((string) ($payload['query'] ?? ''));
@@ -186,8 +188,7 @@ try {
         'subject_slug' => $subjectSlug,
     ]);
 } catch (Throwable $throwable) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $throwable->getMessage()]);
+    json_internal_error($throwable);
 } finally {
     if ($sqlRunner instanceof QueryRunner) {
         $sqlRunner->teardown();

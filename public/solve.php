@@ -107,6 +107,7 @@ $chartAssetVersion = (string) (file_exists($chartAssetPath) ? filemtime($chartAs
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="<?= e(csrf_token()) ?>">
     <title><?= e($problem['title']) ?> | GenzLAB</title>
     <link rel="stylesheet" href="<?= e(app_url('assets/css/style.css?v=' . $assetVersion)) ?>">
 </head>

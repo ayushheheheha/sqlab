@@ -15,86 +15,95 @@ if (isset($_GET['subject'])) {
 $subject = get_active_subject();
 $subjectId = (int) ($subject['id'] ?? 0);
 
-$stats = User::stats((int) $user['id']);
-$recent = Submission::recentForUser((int) $user['id'], 5, $subjectId > 0 ? $subjectId : null);
-$badges = User::allBadgesForUser((int) $user['id']);
-$pdo = DB::getConnection();
-
-if (Subject::isReady() && $subjectId > 0) {
-    $totalStmt = $pdo->prepare('SELECT COUNT(*) FROM problems WHERE is_active = 1 AND subject_id = :subject_id');
-    $totalStmt->execute(['subject_id' => $subjectId]);
-    $totalProblems = (int) $totalStmt->fetchColumn();
-
-    $solvedStmt = $pdo->prepare(
-        'SELECT COUNT(DISTINCT up.problem_id)
-         FROM user_progress up
-         INNER JOIN problems p ON p.id = up.problem_id
-         WHERE up.user_id = :user_id AND up.status = "solved" AND p.subject_id = :subject_id'
-    );
-    $solvedStmt->execute(['user_id' => (int) $user['id'], 'subject_id' => $subjectId]);
-    $stats['solved_count'] = (int) $solvedStmt->fetchColumn();
-} else {
-    $totalProblems = (int) $pdo->query('SELECT COUNT(*) FROM problems WHERE is_active = 1')->fetchColumn();
-}
-
+$stats = ['solved_count' => 0, 'attempted_count' => 0, 'badge_count' => 0];
+$recent = [];
+$badges = [];
+$totalProblems = 0;
+$recommended = [];
 $level = intdiv((int) $user['xp'], 100);
 $xpProgress = (int) $user['xp'] % 100;
 
-$categorySql = 'SELECT p.category, COUNT(*) AS solved_count
-                FROM user_progress up
-                INNER JOIN problems p ON p.id = up.problem_id
-                WHERE up.user_id = :user_id AND up.status = "solved"';
-$categoryParams = ['user_id' => (int) $user['id']];
-
-if (Subject::isReady() && $subjectId > 0) {
-    $categorySql .= ' AND p.subject_id = :subject_id';
-    $categoryParams['subject_id'] = $subjectId;
-}
-
-$categorySql .= ' GROUP BY p.category ORDER BY solved_count DESC LIMIT 1';
-$categoryStmt = $pdo->prepare($categorySql);
-$categoryStmt->execute($categoryParams);
-$commonCategory = $categoryStmt->fetchColumn();
-
-$recommendedSql = 'SELECT p.*
-                   FROM problems p
-                   LEFT JOIN user_progress up ON up.problem_id = p.id AND up.user_id = :user_id
-                   WHERE p.is_active = 1
-                     AND (up.status IS NULL OR up.status != "solved")
-                     AND (:category_filter = "" OR p.category = :category_match)';
-$recommendedParams = [
-    'user_id' => (int) $user['id'],
-    'category_filter' => (string) ($commonCategory ?: ''),
-    'category_match' => (string) ($commonCategory ?: ''),
-];
-
-if (Subject::isReady() && $subjectId > 0) {
-    $recommendedSql .= ' AND p.subject_id = :subject_id';
-    $recommendedParams['subject_id'] = $subjectId;
-}
-
-$recommendedSql .= ' ORDER BY FIELD(p.difficulty, "easy", "medium", "hard"), p.id LIMIT 3';
-$recommendedStmt = $pdo->prepare($recommendedSql);
-$recommendedStmt->execute($recommendedParams);
-$recommended = $recommendedStmt->fetchAll();
-
-if (!$recommended) {
-    $fallbackSql = 'SELECT p.*
-                    FROM problems p
-                    LEFT JOIN user_progress up ON up.problem_id = p.id AND up.user_id = :user_id
-                    WHERE p.is_active = 1
-                      AND (up.status IS NULL OR up.status != "solved")';
-    $fallbackParams = ['user_id' => (int) $user['id']];
+try {
+    $stats = User::stats((int) $user['id']);
+    $recent = Submission::recentForUser((int) $user['id'], 5, $subjectId > 0 ? $subjectId : null);
+    $badges = User::allBadgesForUser((int) $user['id']);
+    $pdo = DB::getConnection();
 
     if (Subject::isReady() && $subjectId > 0) {
-        $fallbackSql .= ' AND p.subject_id = :subject_id';
-        $fallbackParams['subject_id'] = $subjectId;
+        $totalStmt = $pdo->prepare('SELECT COUNT(*) FROM problems WHERE is_active = 1 AND subject_id = :subject_id');
+        $totalStmt->execute(['subject_id' => $subjectId]);
+        $totalProblems = (int) $totalStmt->fetchColumn();
+
+        $solvedStmt = $pdo->prepare(
+            'SELECT COUNT(DISTINCT up.problem_id)
+             FROM user_progress up
+             INNER JOIN problems p ON p.id = up.problem_id
+             WHERE up.user_id = :user_id AND up.status = "solved" AND p.subject_id = :subject_id'
+        );
+        $solvedStmt->execute(['user_id' => (int) $user['id'], 'subject_id' => $subjectId]);
+        $stats['solved_count'] = (int) $solvedStmt->fetchColumn();
+    } else {
+        $totalProblems = (int) $pdo->query('SELECT COUNT(*) FROM problems WHERE is_active = 1')->fetchColumn();
     }
 
-    $fallbackSql .= ' ORDER BY FIELD(p.difficulty, "easy", "medium", "hard"), p.id LIMIT 3';
-    $fallbackStmt = $pdo->prepare($fallbackSql);
-    $fallbackStmt->execute($fallbackParams);
-    $recommended = $fallbackStmt->fetchAll();
+    $categorySql = 'SELECT p.category, COUNT(*) AS solved_count
+                    FROM user_progress up
+                    INNER JOIN problems p ON p.id = up.problem_id
+                    WHERE up.user_id = :user_id AND up.status = "solved"';
+    $categoryParams = ['user_id' => (int) $user['id']];
+
+    if (Subject::isReady() && $subjectId > 0) {
+        $categorySql .= ' AND p.subject_id = :subject_id';
+        $categoryParams['subject_id'] = $subjectId;
+    }
+
+    $categorySql .= ' GROUP BY p.category ORDER BY solved_count DESC LIMIT 1';
+    $categoryStmt = $pdo->prepare($categorySql);
+    $categoryStmt->execute($categoryParams);
+    $commonCategory = $categoryStmt->fetchColumn();
+
+    $recommendedSql = 'SELECT p.*
+                       FROM problems p
+                       LEFT JOIN user_progress up ON up.problem_id = p.id AND up.user_id = :user_id
+                       WHERE p.is_active = 1
+                         AND (up.status IS NULL OR up.status != "solved")
+                         AND (:category_filter = "" OR p.category = :category_match)';
+    $recommendedParams = [
+        'user_id' => (int) $user['id'],
+        'category_filter' => (string) ($commonCategory ?: ''),
+        'category_match' => (string) ($commonCategory ?: ''),
+    ];
+
+    if (Subject::isReady() && $subjectId > 0) {
+        $recommendedSql .= ' AND p.subject_id = :subject_id';
+        $recommendedParams['subject_id'] = $subjectId;
+    }
+
+    $recommendedSql .= ' ORDER BY FIELD(p.difficulty, "easy", "medium", "hard"), p.id LIMIT 3';
+    $recommendedStmt = $pdo->prepare($recommendedSql);
+    $recommendedStmt->execute($recommendedParams);
+    $recommended = $recommendedStmt->fetchAll();
+
+    if (!$recommended) {
+        $fallbackSql = 'SELECT p.*
+                        FROM problems p
+                        LEFT JOIN user_progress up ON up.problem_id = p.id AND up.user_id = :user_id
+                        WHERE p.is_active = 1
+                          AND (up.status IS NULL OR up.status != "solved")';
+        $fallbackParams = ['user_id' => (int) $user['id']];
+
+        if (Subject::isReady() && $subjectId > 0) {
+            $fallbackSql .= ' AND p.subject_id = :subject_id';
+            $fallbackParams['subject_id'] = $subjectId;
+        }
+
+        $fallbackSql .= ' ORDER BY FIELD(p.difficulty, "easy", "medium", "hard"), p.id LIMIT 3';
+        $fallbackStmt = $pdo->prepare($fallbackSql);
+        $fallbackStmt->execute($fallbackParams);
+        $recommended = $fallbackStmt->fetchAll();
+    }
+} catch (Throwable $throwable) {
+    error_log('[sqlab] subject_dashboard failed: ' . $throwable->getMessage());
 }
 
 render_app_layout($subject['name'] . ' Dashboard', $user, static function () use ($user, $stats, $recent, $badges, $xpProgress, $level, $totalProblems, $recommended, $subject): void {
@@ -163,7 +172,7 @@ render_app_layout($subject['name'] . ' Dashboard', $user, static function () use
             <div class="badge-list">
                 <?php foreach ($badges as $badge): ?>
                     <div class="badge-tile <?= empty($badge['earned_at']) ? 'locked' : '' ?>">
-                        <div style="width:32px; margin-bottom:8px;"><?= $badge['icon_svg'] ?></div>
+                        <div style="width:32px; margin-bottom:8px;"><?= safe_inline_svg((string) $badge['icon_svg']) ?></div>
                         <strong><?= e($badge['name']) ?></strong>
                         <p class="muted"><?= empty($badge['earned_at']) ? 'Locked' : e(date('M j', strtotime($badge['earned_at']))) ?></p>
                     </div>

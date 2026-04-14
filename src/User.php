@@ -63,24 +63,33 @@ final class User
 
     public static function stats(int $userId): array
     {
-        $stmt = DB::getConnection()->prepare(
-            'SELECT
-                COUNT(DISTINCT CASE WHEN up.status = "solved" THEN up.problem_id END) AS solved_count,
-                COUNT(DISTINCT CASE WHEN up.status = "attempted" THEN up.problem_id END) AS attempted_count,
-                COUNT(DISTINCT ub.badge_id) AS badge_count
-             FROM users u
-             LEFT JOIN user_progress up ON up.user_id = u.id
-             LEFT JOIN user_badges ub ON ub.user_id = u.id
-             WHERE u.id = :user_id
-             GROUP BY u.id'
-        );
-        $stmt->execute(['user_id' => $userId]);
+        try {
+            $stmt = DB::getConnection()->prepare(
+                'SELECT
+                    COUNT(DISTINCT CASE WHEN up.status = "solved" THEN up.problem_id END) AS solved_count,
+                    COUNT(DISTINCT CASE WHEN up.status = "attempted" THEN up.problem_id END) AS attempted_count,
+                    COUNT(DISTINCT ub.badge_id) AS badge_count
+                 FROM users u
+                 LEFT JOIN user_progress up ON up.user_id = u.id
+                 LEFT JOIN user_badges ub ON ub.user_id = u.id
+                 WHERE u.id = :user_id
+                 GROUP BY u.id'
+            );
+            $stmt->execute(['user_id' => $userId]);
 
-        return $stmt->fetch() ?: [
-            'solved_count' => 0,
-            'attempted_count' => 0,
-            'badge_count' => 0,
-        ];
+            return $stmt->fetch() ?: [
+                'solved_count' => 0,
+                'attempted_count' => 0,
+                'badge_count' => 0,
+            ];
+        } catch (Throwable $throwable) {
+            error_log('[sqlab] user stats failed: ' . $throwable->getMessage());
+            return [
+                'solved_count' => 0,
+                'attempted_count' => 0,
+                'badge_count' => 0,
+            ];
+        }
     }
 
     public static function badges(int $userId): array
@@ -99,15 +108,20 @@ final class User
 
     public static function allBadgesForUser(int $userId): array
     {
-        $stmt = DB::getConnection()->prepare(
-            'SELECT b.*, ub.earned_at
-             FROM badges b
-             LEFT JOIN user_badges ub ON ub.badge_id = b.id AND ub.user_id = :user_id
-             ORDER BY b.id'
-        );
-        $stmt->execute(['user_id' => $userId]);
+        try {
+            $stmt = DB::getConnection()->prepare(
+                'SELECT b.*, ub.earned_at
+                 FROM badges b
+                 LEFT JOIN user_badges ub ON ub.badge_id = b.id AND ub.user_id = :user_id
+                 ORDER BY b.id'
+            );
+            $stmt->execute(['user_id' => $userId]);
 
-        return $stmt->fetchAll();
+            return $stmt->fetchAll();
+        } catch (Throwable $throwable) {
+            error_log('[sqlab] allBadgesForUser failed: ' . $throwable->getMessage());
+            return [];
+        }
     }
 
     public static function touchActivity(int $userId): void

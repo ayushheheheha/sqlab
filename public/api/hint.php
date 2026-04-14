@@ -14,6 +14,8 @@ if (!$user) {
     exit;
 }
 
+verify_api_csrf_request();
+
 $payload = json_decode(file_get_contents('php://input') ?: '{}', true);
 $problemId = (int) ($payload['problem_id'] ?? 0);
 $hintLevel = (int) ($payload['hint_level'] ?? 0);

@@ -49,6 +49,7 @@ $assetVersion = (string) filemtime(__DIR__ . '/assets/js/practice.js');
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="<?= e(csrf_token()) ?>">
     <title>Practice Lab | GenzLAB</title>
     <link rel="stylesheet" href="<?= e(app_url('assets/css/style.css?v=' . $assetVersion)) ?>">
 </head>
