@@ -187,5 +187,26 @@ render_app_layout($subject['name'] . ' Dashboard', $user, static function () use
             <?php endif; ?>
         </div>
     </section>
+
+    <section class="card recommended-card" style="margin-top:16px;">
+        <h2 style="margin-bottom:16px;">Quizathon</h2>
+        <div class="grid grid-3">
+            <article class="mini-problem-card">
+                <strong>Quiz 1</strong>
+                <p class="muted">Quick checkpoint for <?= e($subject['name']) ?> basics.</p>
+                <a class="btn-ghost" href="<?= e(app_url('quizathon.php?subject=' . urlencode((string) $subject['slug']) . '#quiz1')) ?>">Open Section</a>
+            </article>
+            <article class="mini-problem-card">
+                <strong>Quiz 2</strong>
+                <p class="muted">Intermediate section to test core concepts.</p>
+                <a class="btn-ghost" href="<?= e(app_url('quizathon.php?subject=' . urlencode((string) $subject['slug']) . '#quiz2')) ?>">Open Section</a>
+            </article>
+            <article class="mini-problem-card">
+                <strong>Endterm</strong>
+                <p class="muted">Final section for full-topic evaluation.</p>
+                <a class="btn-ghost" href="<?= e(app_url('quizathon.php?subject=' . urlencode((string) $subject['slug']) . '#endterm')) ?>">Open Section</a>
+            </article>
+        </div>
+    </section>
     <?php
 });

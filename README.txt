@@ -35,3 +35,7 @@ Recommended DB migration for subjects:
 Seed starter Python/Java questions:
 1. Import `migrations/005_seed_python_java_problems.sql`.
 2. This adds initial coding questions for Python and Java subjects (idempotent).
+
+Quizathon setup:
+1. Import `migrations/006_quizathon.sql`.
+2. This creates quiz tables and seeds Quiz 1, Quiz 2, and Endterm samples for SQL/Python/Java.

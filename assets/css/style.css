@@ -1308,6 +1308,50 @@ tr:hover td {
 .admin-form pre { margin:0; }
 .admin-checkbox { display:flex; align-items:center; gap:8px; }
 .admin-checkbox input { width:auto; }
+.quiz-option {
+    display:flex;
+    align-items:flex-start;
+    gap:8px;
+    margin-bottom:8px;
+    text-transform:none;
+    letter-spacing:0;
+    font-size:14px;
+    color:var(--text);
+}
+.quiz-option-input {
+    width:auto;
+    min-height:auto;
+    padding:0;
+    margin-top:2px;
+    border:0;
+    border-radius:0;
+    background:transparent;
+    flex:0 0 auto;
+}
+.quiz-option-input:focus {
+    outline:none;
+    border:0;
+    box-shadow:none;
+}
+.quiz-option-text {
+    flex:1;
+}
+.quizathon-sections {
+    align-items:start;
+}
+.quizathon-section-card {
+    display:flex;
+    flex-direction:column;
+    min-height:70vh;
+}
+.quizathon-section-list {
+    flex:1;
+    min-height:0;
+    max-height:60vh;
+    overflow-y:auto;
+    overflow-x:hidden;
+    padding-right:4px;
+}
 .temp-password { display:inline-block; padding:8px 12px; border:1px dashed var(--border); border-radius:var(--radius); font-family:Consolas, "Courier New", monospace; font-size:18px; letter-spacing:0.02em; }
 @keyframes sqlab-confetti { from { opacity:0.85; transform:translateY(-20px) rotate(0deg); } to { opacity:0; transform:translateY(80px) rotate(12deg); } }
 @media (max-width: 900px) {
@@ -1324,4 +1368,10 @@ tr:hover td {
     .monaco-shell { min-height:50vh; }
     .solve-output { min-height:50vh; }
     .table-shell { overflow-x:auto; }
+    .quizathon-section-card {
+        min-height:auto;
+    }
+    .quizathon-section-list {
+        max-height:50vh;
+    }
 }
