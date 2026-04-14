@@ -163,10 +163,144 @@ function verify_api_csrf_request(): void
 
 function json_internal_error(Throwable $throwable, string $publicMessage = 'Internal server error.'): never
 {
-    error_log('[sqlab] ' . $throwable->getMessage());
+    sqlab_log_throwable($throwable, 'app');
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => $publicMessage, 'error' => $publicMessage]);
     exit;
+}
+
+function sqlab_is_production(): bool
+{
+    return strtolower((string) ($_ENV['APP_ENV'] ?? 'production')) === 'production';
+}
+
+function sqlab_storage_path(string $path = ''): string
+{
+    $base = dirname(__DIR__) . '/storage';
+
+    return $path === '' ? $base : $base . '/' . ltrim($path, '/\\');
+}
+
+function sqlab_log_throwable(Throwable $throwable, string $channel = 'app'): void
+{
+    $logDir = sqlab_storage_path('logs');
+
+    if (!is_dir($logDir)) {
+        @mkdir($logDir, 0775, true);
+    }
+
+    $safeChannel = preg_replace('/[^a-zA-Z0-9_.-]/', '_', $channel) ?: 'app';
+    $logFile = $logDir . '/' . $safeChannel . '.log';
+    $entry = sprintf(
+        "[%s] %s: %s in %s:%d\n%s\n\n",
+        date('c'),
+        get_class($throwable),
+        $throwable->getMessage(),
+        $throwable->getFile(),
+        $throwable->getLine(),
+        $throwable->getTraceAsString()
+    );
+
+    if (@file_put_contents($logFile, $entry, FILE_APPEND | LOCK_EX) === false) {
+        error_log('[sqlab] ' . $entry);
+    }
+}
+
+function sqlab_client_ip(): string
+{
+    $candidates = [
+        (string) ($_SERVER['HTTP_CF_CONNECTING_IP'] ?? ''),
+        (string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''),
+        (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
+    ];
+
+    foreach ($candidates as $candidate) {
+        $candidate = trim(explode(',', $candidate)[0] ?? '');
+
+        if ($candidate !== '' && filter_var($candidate, FILTER_VALIDATE_IP)) {
+            return $candidate;
+        }
+    }
+
+    return '0.0.0.0';
+}
+
+function sqlab_rate_limit_hit(string $scope, string $actor, int $maxHits, int $windowSeconds): array
+{
+    $scope = trim($scope);
+    $actor = trim($actor);
+
+    if ($scope === '' || $actor === '' || $maxHits <= 0 || $windowSeconds <= 0) {
+        return ['allowed' => true, 'retry_after' => 0, 'hits' => 0];
+    }
+
+    try {
+        $pdo = DB::getConnection();
+        sqlab_ensure_rate_limit_table($pdo);
+
+        $now = time();
+        $windowStart = intdiv($now, $windowSeconds) * $windowSeconds;
+
+        $insert = $pdo->prepare(
+            'INSERT INTO request_rate_limits (scope, actor, window_start, hits, updated_at)
+             VALUES (:scope, :actor, :window_start, 1, NOW())
+             ON DUPLICATE KEY UPDATE hits = hits + 1, updated_at = NOW()'
+        );
+        $insert->execute([
+            'scope' => $scope,
+            'actor' => $actor,
+            'window_start' => $windowStart,
+        ]);
+
+        $hitsStmt = $pdo->prepare(
+            'SELECT hits FROM request_rate_limits
+             WHERE scope = :scope AND actor = :actor AND window_start = :window_start
+             LIMIT 1'
+        );
+        $hitsStmt->execute([
+            'scope' => $scope,
+            'actor' => $actor,
+            'window_start' => $windowStart,
+        ]);
+
+        $hits = (int) ($hitsStmt->fetchColumn() ?: 0);
+        $allowed = $hits <= $maxHits;
+        $retryAfter = $allowed ? 0 : max(1, ($windowStart + $windowSeconds) - $now);
+
+        if (random_int(1, 100) <= 2) {
+            $cleanupSeconds = max($windowSeconds * 6, 3600);
+            $pdo->exec('DELETE FROM request_rate_limits WHERE updated_at < DATE_SUB(NOW(), INTERVAL ' . (int) $cleanupSeconds . ' SECOND)');
+        }
+
+        return ['allowed' => $allowed, 'retry_after' => $retryAfter, 'hits' => $hits];
+    } catch (Throwable $throwable) {
+        sqlab_log_throwable($throwable, 'rate_limit');
+
+        return ['allowed' => true, 'retry_after' => 0, 'hits' => 0];
+    }
+}
+
+function sqlab_ensure_rate_limit_table(PDO $pdo): void
+{
+    static $initialized = false;
+
+    if ($initialized) {
+        return;
+    }
+
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS request_rate_limits (
+            scope VARCHAR(64) NOT NULL,
+            actor VARCHAR(190) NOT NULL,
+            window_start INT NOT NULL,
+            hits INT NOT NULL DEFAULT 0,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (scope, actor, window_start),
+            KEY idx_request_rate_limits_updated (updated_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
+    $initialized = true;
 }
 
 function safe_inline_svg(string $svg): string

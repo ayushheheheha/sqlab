@@ -32,14 +32,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const top = data.slice(0, 3);
     const order = [1, 0, 2];
     podium.innerHTML = top.length
-      ? order.map((positionIndex) => {
+      ? order.map((positionIndex, visualIndex) => {
         const user = top[positionIndex];
         if (!user) {
           return '';
         }
         const initials = escapeHtml((user.username || '').slice(0, 2).toUpperCase());
         const rankClass = user.rank === 1 ? 'gold' : (user.rank === 2 ? 'silver' : 'bronze');
-        return `<article class="podium-item ${rankClass}"><div class="podium-avatar">${initials}</div><strong>#${user.rank} ${escapeHtml(user.username)}</strong><p>${user.xp} XP</p></article>`;
+        return `<article class="podium-item ${rankClass} podium-pos-${visualIndex + 1}"><div class="podium-avatar">${initials}</div><strong>#${user.rank} ${escapeHtml(user.username)}</strong><p>${user.xp} XP</p></article>`;
       }).join('')
       : emptyCard;
   }
@@ -50,7 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    rows.innerHTML = data.map((user, index) => {
+    rows.innerHTML = data.map((user) => {
       const current = Number(user.id) === Number(config.currentUserId) ? 'current-user-row' : '';
       return `<tr class="${current}"><td>${user.rank}</td><td>${escapeHtml(user.username)}</td><td>${user.solved}</td><td>${user.xp}</td><td>${user.streak}</td><td>${user.badge_count}</td></tr>`;
     }).join('');

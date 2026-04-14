@@ -44,12 +44,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function openProblemForm(problemId = 0) {
     modal.hidden = false;
-    formContainer.innerHTML = '<div class="empty-state">Loading form...</div>';
+    formContainer.textContent = 'Loading form...';
 
     const url = problemId > 0 ? `${config.endpoints.form}?id=${problemId}` : config.endpoints.form;
     const response = await fetch(url);
     const html = await response.text();
-    formContainer.innerHTML = html;
+    safeSetHtml(formContainer, html);
     bindProblemForm();
   }
 
@@ -158,8 +158,52 @@ document.addEventListener('DOMContentLoaded', () => {
     const sourceBody = doc.getElementById('adminProblemsTable');
     const targetBody = document.getElementById('adminProblemsTable');
     if (sourceBody && targetBody) {
-      targetBody.innerHTML = sourceBody.innerHTML;
+      const fragment = document.createDocumentFragment();
+      Array.from(sourceBody.children).forEach((row) => {
+        const clone = row.cloneNode(true);
+        if (clone.nodeType === Node.ELEMENT_NODE) {
+          sanitizeElement(clone);
+        }
+        fragment.appendChild(clone);
+      });
+      targetBody.replaceChildren(fragment);
     }
+  }
+
+  function safeSetHtml(container, html) {
+    const parser = new DOMParser();
+    const parsed = parser.parseFromString(String(html || ''), 'text/html');
+    const fragment = document.createDocumentFragment();
+
+    Array.from(parsed.body.childNodes).forEach((node) => {
+      const clone = node.cloneNode(true);
+      if (clone.nodeType === Node.ELEMENT_NODE) {
+        sanitizeElement(clone);
+      }
+      fragment.appendChild(clone);
+    });
+
+    container.replaceChildren(fragment);
+  }
+
+  function sanitizeElement(root) {
+    const blockedSelector = 'script, iframe, object, embed, base, link[rel="import"], meta[http-equiv]';
+    root.querySelectorAll(blockedSelector).forEach((el) => el.remove());
+
+    const walk = [root, ...root.querySelectorAll('*')];
+    walk.forEach((el) => {
+      Array.from(el.attributes).forEach((attr) => {
+        const name = attr.name.toLowerCase();
+        const value = String(attr.value || '').trim().toLowerCase();
+        if (name.startsWith('on')) {
+          el.removeAttribute(attr.name);
+          return;
+        }
+        if ((name === 'src' || name === 'href' || name === 'xlink:href') && value.startsWith('javascript:')) {
+          el.removeAttribute(attr.name);
+        }
+      });
+    });
   }
 
   function renderTable(columns, rows) {

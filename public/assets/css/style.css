@@ -1220,6 +1220,9 @@ tr:hover td {
 .leaderboard-podium { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; margin-bottom:16px; align-items:end; }
 .podium-item { display:flex; flex-direction:column; align-items:center; gap:10px; padding:16px; border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--bg-surface); animation:slideUp .2s ease both; }
 .podium-avatar { width:72px; height:72px; border-radius:50%; border:2px solid var(--border); display:grid; place-items:center; font-weight:700; background:var(--bg); }
+.podium-item.podium-pos-1 { grid-column: 1; }
+.podium-item.podium-pos-2 { grid-column: 2; }
+.podium-item.podium-pos-3 { grid-column: 3; }
 .podium-item.gold .podium-avatar { width:88px; height:88px; border-color:#C9A84C; }
 .podium-item.silver .podium-avatar { border-color:#A8A9AD; }
 .podium-item.bronze .podium-avatar { border-color:#CD7F32; }

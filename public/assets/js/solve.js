@@ -544,7 +544,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function loadScript(src) {
     return new Promise((resolve) => {
-      const existing = document.querySelector(`script[data-chart-cdn="${src}"]`);
+      const srcPath = scriptPath(src);
+      const existing = Array.from(document.scripts).find((script) => {
+        const scriptSrc = script.getAttribute('src') || '';
+        if (!scriptSrc) {
+          return false;
+        }
+
+        return scriptPath(scriptSrc) === srcPath;
+      });
       if (existing) {
         if (typeof window.Chart !== 'undefined') {
           resolve(true);
@@ -582,6 +590,14 @@ document.addEventListener('DOMContentLoaded', () => {
       };
       document.head.appendChild(script);
     });
+  }
+
+  function scriptPath(src) {
+    try {
+      return new URL(src, window.location.origin).pathname;
+    } catch (_error) {
+      return String(src).split('?')[0];
+    }
   }
 
   async function loadSchemaVisual() {
@@ -645,7 +661,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     boxes.forEach((box) => {
       svg += `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="10" ry="10" fill="var(--bg-surface)" stroke="var(--border)"></rect>`;
-      svg += `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${headerHeight}" rx="10" ry="10" fill="#1F2A44"></rect>`;
+      svg += `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${headerHeight}" rx="10" ry="10" fill="var(--primary)"></rect>`;
       svg += `<text x="${box.x + 12}" y="${box.y + 22}" fill="#ffffff" font-size="13" font-weight="700">${escapeHtml(box.name)}</text>`;
 
       box.columns.forEach((column, index) => {
@@ -653,7 +669,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (index % 2 === 1) {
           svg += `<rect x="${box.x + 1}" y="${y}" width="${box.width - 2}" height="${rowHeight}" fill="rgba(0,0,0,0.03)"></rect>`;
         }
-        svg += `<text x="${box.x + 12}" y="${y + 17}" fill="currentColor" font-size="12">${escapeHtml(column.name)} <tspan fill="#777">${escapeHtml(column.type)}</tspan></text>`;
+        svg += `<text x="${box.x + 12}" y="${y + 17}" fill="currentColor" font-size="12">${escapeHtml(column.name)} <tspan fill="var(--text-muted)">${escapeHtml(column.type)}</tspan></text>`;
         if (column.is_pk) {
           svg += `<rect x="${box.x + box.width - 74}" y="${y + 6}" width="24" height="14" rx="7" fill="rgba(31,122,67,0.15)"></rect><text x="${box.x + box.width - 67}" y="${y + 16}" fill="#1f7a43" font-size="10">PK</text>`;
         }

@@ -179,7 +179,7 @@ $chartAssetVersion = (string) (file_exists($chartAssetPath) ? filemtime($chartAs
                 <?php endif; ?>
             </div>
             <div class="solve-output">
-                <div class="solve-tab-panel active" id="tab-results">
+                <div class="solve-tab-panel active" id="tab-results" role="status" aria-live="polite" aria-atomic="false">
                     <div class="empty-state"><?= e($starterText) ?></div>
                 </div>
                 <?php if ($isSqlSubject): ?>
@@ -200,7 +200,7 @@ $chartAssetVersion = (string) (file_exists($chartAssetPath) ? filemtime($chartAs
                     <div class="solve-tab-panel" id="tab-expected">
                         <div class="empty-state">Open this tab to fetch the expected output.</div>
                     </div>
-                    <div class="solve-tab-panel" id="tab-submissions">
+                    <div class="solve-tab-panel" id="tab-submissions" role="status" aria-live="polite" aria-atomic="false">
                         <div class="empty-state">Open this tab to fetch your recent submissions.</div>
                     </div>
                 <?php endif; ?>
@@ -254,7 +254,6 @@ $chartAssetVersion = (string) (file_exists($chartAssetPath) ? filemtime($chartAs
             chartLocalUrl: <?= json_encode(app_url('assets/js/chart.umd.min.js?v=' . $chartAssetVersion), JSON_THROW_ON_ERROR) ?>
         };
     </script>
-    <script src="<?= e(app_url('assets/js/chart.umd.min.js?v=' . $chartAssetVersion)) ?>"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
     <script src="<?= e(app_url('assets/js/app.js?v=' . $assetVersion)) ?>" defer></script>
     <script src="<?= e(app_url('assets/js/solve.js?v=' . $assetVersion)) ?>" defer></script>

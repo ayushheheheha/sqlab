@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
   window.fetch = async (input, init = {}) => {
     const nextInit = { ...init };
     const headers = new Headers(nextInit.headers || {});
-    if (csrfToken && !headers.has('X-CSRF-Token')) {
+    if (csrfToken && shouldAttachCsrf(input, nextInit) && !headers.has('X-CSRF-Token')) {
       headers.set('X-CSRF-Token', csrfToken);
     }
     nextInit.headers = headers;
@@ -124,6 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const problemCategory = document.getElementById('problemCategory');
   const emptyState = document.getElementById('problemEmptyState');
   const filters = { difficulty: 'all', status: 'all' };
+  let filterDebounceTimer = null;
 
   function applyProblemFilters() {
     if (!problemCards.length) {
@@ -149,7 +150,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  problemSearch?.addEventListener('input', applyProblemFilters);
+  problemSearch?.addEventListener('input', () => {
+    if (filterDebounceTimer !== null) {
+      window.clearTimeout(filterDebounceTimer);
+    }
+
+    filterDebounceTimer = window.setTimeout(() => {
+      applyProblemFilters();
+      filterDebounceTimer = null;
+    }, 120);
+  });
   problemCategory?.addEventListener('change', applyProblemFilters);
 
   document.querySelectorAll('[data-problem-filter]').forEach((group) => {
@@ -162,4 +172,22 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   });
+
+  function shouldAttachCsrf(input, init) {
+    const method = String(init?.method || 'GET').toUpperCase();
+
+    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+      return false;
+    }
+
+    try {
+      const requestUrl = input instanceof Request
+        ? new URL(input.url, window.location.origin)
+        : new URL(String(input), window.location.origin);
+
+      return requestUrl.origin === window.location.origin;
+    } catch (_error) {
+      return false;
+    }
+  }
 });

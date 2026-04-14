@@ -105,11 +105,11 @@ $assetVersion = (string) filemtime(__DIR__ . '/assets/js/practice.js');
                 <?php endif; ?>
             </div>
             <div class="solve-output">
-                <div class="solve-tab-panel active" id="practice-tab-results">
+                <div class="solve-tab-panel active" id="practice-tab-results" role="status" aria-live="polite" aria-atomic="false">
                     <div class="empty-state"><?= e($emptyText) ?></div>
                 </div>
                 <?php if ($isSqlSubject): ?>
-                    <div class="solve-tab-panel" id="practice-tab-logs">
+                    <div class="solve-tab-panel" id="practice-tab-logs" role="status" aria-live="polite" aria-atomic="false">
                         <div class="empty-state">Execution logs will appear here.</div>
                     </div>
                 <?php endif; ?>

@@ -58,6 +58,13 @@ final class Auth
 
     public static function login(string $email, string $password): array
     {
+        $ip = sqlab_client_ip();
+        $rate = sqlab_rate_limit_hit('login_ip', $ip, 10, 15 * 60);
+
+        if (!$rate['allowed']) {
+            return ['success' => false, 'message' => 'Too many login attempts. Please try again later.'];
+        }
+
         $stmt = DB::getConnection()->prepare('SELECT * FROM users WHERE email = :email LIMIT 1');
         $stmt->execute(['email' => strtolower(trim($email))]);
         $user = $stmt->fetch();
@@ -164,6 +171,12 @@ final class Auth
 
         if (!$user) {
             return ['success' => false, 'message' => 'No pending verification session found.'];
+        }
+
+        $rate = sqlab_rate_limit_hit('otp_resend_user', 'user:' . (int) $user['id'], 3, 10 * 60);
+
+        if (!$rate['allowed']) {
+            return ['success' => false, 'message' => 'Too many OTP resend requests. Please wait before trying again.'];
         }
 
         return VerificationService::issueOtp((int) $user['id'], (string) $user['email'], (string) $user['username']);

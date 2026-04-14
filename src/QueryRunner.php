@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 final class QueryRunner
 {
+    private const MAX_SELECT_ROWS = 500;
+
     private int $problemId;
     private int $userId;
     private ?string $tempDbName = null;
@@ -12,6 +14,7 @@ final class QueryRunner
     private array $tableMap = [];
     private ?array $problem = null;
     private string $expectedQuery = '';
+    private static bool $sandboxPrivilegesVerified = false;
 
     public function __construct(int $problemId)
     {
@@ -32,11 +35,12 @@ final class QueryRunner
         $rootPdo = DB::getConnection();
 
         if ($this->sharedHostingMode) {
-            $this->tablePrefix = sprintf('sqlab_q_%d_%d_%s_', max(0, $this->userId), $this->problemId, str_replace('.', '', uniqid('', true)));
+            $this->tablePrefix = sprintf('sqlab_q_%d_%d_%s_', max(0, $this->userId), $this->problemId, $this->randomToken());
             $this->tableMap = $this->buildTableMap($this->problem, $this->tablePrefix);
             $rootSandbox = $rootPdo;
         } else {
-            $this->tempDbName = sprintf('sqlab_sandbox_%d_%s', max(0, $this->userId), str_replace('.', '', uniqid('', true)));
+            $this->assertSandboxUserPrivileges();
+            $this->tempDbName = sprintf('sqlab_sandbox_%d_%s', max(0, $this->userId), $this->randomToken());
             $charset = $_ENV['DB_CHARSET'] ?? 'utf8mb4';
             $rootPdo->exec(sprintf('CREATE DATABASE `%s` CHARACTER SET %s COLLATE %s_unicode_ci', $this->tempDbName, $charset, $charset));
             $rootPdo->exec(sprintf("GRANT SELECT ON `%s`.* TO '%s'@'localhost'", $this->tempDbName, $this->sandboxUser()));
@@ -73,6 +77,7 @@ final class QueryRunner
     {
         $userQuery = trim($userQuery);
         $userQuery = preg_replace('/;\s*$/', '', $userQuery) ?? $userQuery;
+        $truncated = false;
 
         if (!$this->sharedHostingMode && $this->tempDbName === null) {
             return $this->errorResult('Sandbox is not ready.');
@@ -87,6 +92,7 @@ final class QueryRunner
             $this->applyExecutionLimit($pdo);
             $queryToRun = sqlab_translate_oracle_sql($userQuery);
             $queryToRun = $this->rewriteSqlWithMap($queryToRun, $this->tableMap);
+            $queryToRun = $this->enforceSelectLimit($queryToRun, $truncated);
 
             $startedAt = microtime(true);
             $stmt = $pdo->query($queryToRun);
@@ -99,10 +105,11 @@ final class QueryRunner
                 'columns' => $this->columnNames($stmt, $rows),
                 'row_count' => count($rows),
                 'execution_ms' => $executionMs,
+                'truncated' => $truncated,
                 'error' => null,
             ];
         } catch (Throwable $throwable) {
-            return $this->errorResult($throwable->getMessage());
+            return $this->errorResult($throwable->getMessage(), $truncated);
         }
     }
 
@@ -177,7 +184,7 @@ final class QueryRunner
         return $columns ?: array_keys($rows[0] ?? []);
     }
 
-    private function errorResult(string $message): array
+    private function errorResult(string $message, bool $truncated = false): array
     {
         return [
             'success' => false,
@@ -185,8 +192,22 @@ final class QueryRunner
             'columns' => [],
             'row_count' => 0,
             'execution_ms' => 0,
+            'truncated' => $truncated,
             'error' => $message,
         ];
+    }
+
+    private function enforceSelectLimit(string $query, bool &$truncated): string
+    {
+        if (preg_match('/\bLIMIT\s+\d+/i', $query)) {
+            $truncated = false;
+
+            return $query;
+        }
+
+        $truncated = true;
+
+        return rtrim($query) . ' LIMIT ' . self::MAX_SELECT_ROWS;
     }
 
     private function applyExecutionLimit(PDO $pdo): void
@@ -284,5 +305,50 @@ final class QueryRunner
     private function sandboxUser(): string
     {
         return str_replace("'", "''", $_ENV['DB_SANDBOX_USER'] ?? 'sqlab_sandbox');
+    }
+
+    private function randomToken(): string
+    {
+        return bin2hex(random_bytes(8));
+    }
+
+    private function assertSandboxUserPrivileges(): void
+    {
+        if (self::$sandboxPrivilegesVerified) {
+            return;
+        }
+
+        $charset = (string) ($_ENV['DB_CHARSET'] ?? 'utf8mb4');
+        $pdo = new PDO(
+            sprintf(
+                'mysql:host=%s;port=%s;charset=%s',
+                $_ENV['DB_HOST'] ?? '127.0.0.1',
+                $_ENV['DB_PORT'] ?? '3306',
+                $charset
+            ),
+            $_ENV['DB_SANDBOX_USER'] ?? 'sqlab_sandbox',
+            $_ENV['DB_SANDBOX_PASS'] ?? '',
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]
+        );
+
+        $grants = $pdo->query('SHOW GRANTS FOR CURRENT_USER')->fetchAll(PDO::FETCH_COLUMN);
+
+        if (!$grants) {
+            throw new RuntimeException('Sandbox user grants could not be verified.');
+        }
+
+        $dangerousPattern = '/\b(ALL PRIVILEGES|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|INDEX|REFERENCES|TRIGGER|EVENT|EXECUTE|FILE|SUPER|GRANT OPTION|CREATE USER|RELOAD|PROCESS|SHUTDOWN|REPLICATION)\b/i';
+
+        foreach ($grants as $grant) {
+            if (preg_match($dangerousPattern, (string) $grant)) {
+                throw new RuntimeException('Sandbox user has elevated database privileges.');
+            }
+        }
+
+        self::$sandboxPrivilegesVerified = true;
     }
 }

@@ -16,6 +16,18 @@ if (!$user) {
 
 verify_api_csrf_request();
 
+$submitRate = sqlab_rate_limit_hit('execute_user', 'user:' . (int) $user['id'], 30, 60);
+
+if (!$submitRate['allowed']) {
+    http_response_code(429);
+    echo json_encode([
+        'success' => false,
+        'error' => 'Too many submissions. Please wait and try again.',
+        'message' => 'Too many submissions. Please wait and try again.',
+    ]);
+    exit;
+}
+
 $payload = json_decode(file_get_contents('php://input') ?: '{}', true);
 $problemId = (int) ($payload['problem_id'] ?? 0);
 $submission = trim((string) ($payload['query'] ?? ''));
@@ -67,6 +79,7 @@ try {
             'columns' => $result['columns'],
             'row_count' => $result['row_count'],
             'execution_ms' => $result['execution_ms'],
+            'truncated' => (bool) ($result['truncated'] ?? false),
             'error' => $result['error'],
             'is_correct' => $isCorrect,
             'xp_awarded' => $progress['xp_awarded'],
@@ -173,6 +186,7 @@ try {
         'columns' => [],
         'row_count' => 0,
         'execution_ms' => $result['execution_ms'],
+        'truncated' => false,
         'error' => $result['error'],
         'status' => $result['status'] ?? 'Unknown',
         'stdout' => $result['stdout'] ?? '',
@@ -188,7 +202,14 @@ try {
         'subject_slug' => $subjectSlug,
     ]);
 } catch (Throwable $throwable) {
-    json_internal_error($throwable);
+    sqlab_log_throwable($throwable, 'execute');
+
+    $publicMessage = sqlab_is_production()
+        ? 'Internal server error.'
+        : ('Internal server error: ' . $throwable->getMessage());
+
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => $publicMessage, 'error' => $publicMessage]);
 } finally {
     if ($sqlRunner instanceof QueryRunner) {
         $sqlRunner->teardown();

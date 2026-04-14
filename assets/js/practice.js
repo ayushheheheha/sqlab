@@ -144,7 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const preview = result.table_preview || null;
 
     let html = `<div class="solve-flash correct">${escapeHtml(result.message || 'Statement executed successfully.')}</div>`;
-    html += `<div class="card" style="padding:14px; margin-top:10px;"><strong>Execution Summary</strong><p class="muted" style="margin-top:6px;">Statement: ${escapeHtml(result.statement_type || 'SQL')} · Affected rows: ${Number(result.affected_rows || 0)}</p></div>`;
+    html += `<div class="card" style="padding:14px; margin-top:10px;"><strong>Execution Summary</strong><p class="muted" style="margin-top:6px;">Statement: ${escapeHtml(result.statement_type || 'SQL')} &middot; Affected rows: ${Number(result.affected_rows || 0)}</p></div>`;
 
     if (tables.length) {
       html += `<div class="card" style="padding:14px; margin-top:10px;"><strong>Current Tables</strong><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;">${tables.map((table) => `<span class="badge badge-muted">${escapeHtml(table)}</span>`).join('')}</div></div>`;
