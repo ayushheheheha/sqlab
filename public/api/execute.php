@@ -82,6 +82,10 @@ try {
     $caseResults = [];
     $result = null;
 
+    if (!$testCases) {
+        $testCases = parse_non_sql_test_cases((string) ($problem['expected_query'] ?? ''));
+    }
+
     if ($testCases) {
         foreach ($testCases as $case) {
             if (!is_array($case) || !array_key_exists('input', $case) || !array_key_exists('expected_output', $case)) {
@@ -188,5 +192,52 @@ try {
     if ($sqlRunner instanceof QueryRunner) {
         $sqlRunner->teardown();
     }
+}
+
+function parse_non_sql_test_cases(string $raw): array
+{
+    $raw = trim($raw);
+
+    if ($raw === '') {
+        return [];
+    }
+
+    if (str_starts_with($raw, '[')) {
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+            $cases = [];
+            foreach ($decoded as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $expected = trim((string) ($row['expected_output'] ?? ''));
+                if ($expected === '') {
+                    continue;
+                }
+                $cases[] = [
+                    'input' => (string) ($row['input'] ?? ''),
+                    'expected_output' => $expected,
+                ];
+            }
+            return $cases;
+        }
+    }
+
+    $cases = [];
+    foreach (preg_split('/\r?\n/', $raw) ?: [] as $line) {
+        $line = trim($line);
+        if ($line === '') {
+            continue;
+        }
+        $parts = array_map('trim', explode('||', $line, 2));
+        $input = count($parts) === 2 ? $parts[0] : '';
+        $expected = count($parts) === 2 ? $parts[1] : ($parts[0] ?? '');
+        if ($expected === '') {
+            continue;
+        }
+        $cases[] = ['input' => $input, 'expected_output' => $expected];
+    }
+
+    return $cases;
 }
 

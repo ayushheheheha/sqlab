@@ -13,6 +13,14 @@ $categories = Problem::categories();
 $subjects = Subject::allActive();
 $selectedDatasetId = isset($problem['dataset_records'][0]['id']) ? (int) $problem['dataset_records'][0]['id'] : 0;
 $selectedSubjectId = isset($problem['subject_id']) ? (int) $problem['subject_id'] : 1;
+$subjectMap = [];
+
+foreach ($subjects as $subject) {
+    $subjectMap[(int) $subject['id']] = strtolower((string) ($subject['slug'] ?? 'sql'));
+}
+
+$selectedSubjectSlug = $subjectMap[$selectedSubjectId] ?? 'sql';
+$isSqlSubject = $selectedSubjectSlug === 'sql';
 ?>
 <form id="adminProblemForm" class="admin-form">
     <?= csrf_input() ?>
@@ -31,7 +39,7 @@ $selectedSubjectId = isset($problem['subject_id']) ? (int) $problem['subject_id'
             <label for="pf_subject">Subject</label>
             <select id="pf_subject" name="subject_id" required>
                 <?php foreach ($subjects as $subject): ?>
-                    <option value="<?= (int) $subject['id'] ?>" <?= $selectedSubjectId === (int) $subject['id'] ? 'selected' : '' ?>>
+                    <option value="<?= (int) $subject['id'] ?>" data-subject-slug="<?= e(strtolower((string) ($subject['slug'] ?? 'sql'))) ?>" <?= $selectedSubjectId === (int) $subject['id'] ? 'selected' : '' ?>>
                         <?= e($subject['name']) ?>
                     </option>
                 <?php endforeach; ?>
@@ -57,9 +65,9 @@ $selectedSubjectId = isset($problem['subject_id']) ? (int) $problem['subject_id'
             </datalist>
         </div>
     </div>
-    <div class="form-group">
+    <div class="form-group" id="pf_dataset_group" <?= $isSqlSubject ? '' : 'style="display:none;"' ?>>
         <label for="pf_dataset">Dataset</label>
-        <select id="pf_dataset" name="dataset_id" required>
+        <select id="pf_dataset" name="dataset_id" <?= $isSqlSubject ? 'required' : '' ?> <?= $isSqlSubject ? '' : 'disabled' ?>>
             <option value="">Select dataset</option>
             <?php foreach ($datasets as $dataset): ?>
                 <option value="<?= (int) $dataset['id'] ?>" <?= $selectedDatasetId === (int) $dataset['id'] ? 'selected' : '' ?>>
@@ -69,9 +77,10 @@ $selectedSubjectId = isset($problem['subject_id']) ? (int) $problem['subject_id'
         </select>
     </div>
     <div class="form-group">
-        <label for="pf_expected_query">Expected Query</label>
-        <textarea id="pf_expected_query" name="expected_query" rows="4" required><?= e($problem['expected_query'] ?? '') ?></textarea>
-        <div style="margin-top:8px;">
+        <label for="pf_expected_query" id="pf_expected_label"><?= $isSqlSubject ? 'Expected Query' : 'Test Cases' ?></label>
+        <textarea id="pf_expected_query" name="expected_query" rows="4" required placeholder="<?= e($isSqlSubject ? 'SELECT ...' : "5 9 || 14\n10 25 || 35") ?>"><?= e($problem['expected_query'] ?? '') ?></textarea>
+        <p class="muted" id="pf_expected_help" style="margin-top:8px;"><?= $isSqlSubject ? 'Provide the exact query used for correctness checks.' : 'Use one test case per line: input || expected_output' ?></p>
+        <div style="margin-top:8px;" id="pf_expected_test_wrap" <?= $isSqlSubject ? '' : 'hidden' ?>>
             <button class="btn-ghost" type="button" id="testExpectedQuery">Test Query</button>
         </div>
     </div>

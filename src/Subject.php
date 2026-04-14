@@ -66,6 +66,34 @@ final class Subject
         return $row ?: null;
     }
 
+    public static function findById(int $id): ?array
+    {
+        if ($id <= 0) {
+            return null;
+        }
+
+        if (!self::isReady()) {
+            foreach (self::fallbackSubjects() as $subject) {
+                if ((int) $subject['id'] === $id) {
+                    return $subject;
+                }
+            }
+
+            return null;
+        }
+
+        $stmt = DB::getConnection()->prepare(
+            'SELECT id, slug, name, description, is_active, sort_order
+             FROM subjects
+             WHERE id = :id AND is_active = 1
+             LIMIT 1'
+        );
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+
+        return $row ?: null;
+    }
+
     public static function statsForUser(int $userId): array
     {
         $subjects = self::allActive();

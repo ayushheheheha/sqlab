@@ -22,6 +22,52 @@ $subjectSlug = strtolower((string) ($problem['subject_slug'] ?? 'sql'));
 $isSqlSubject = $subjectSlug === 'sql';
 $editorLanguage = $isSqlSubject ? 'sql' : ($subjectSlug === 'java' ? 'java' : 'python');
 
+$parseNonSqlCases = static function (string $raw): array {
+    $raw = trim($raw);
+
+    if ($raw === '') {
+        return [];
+    }
+
+    if (str_starts_with($raw, '[')) {
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+            $cases = [];
+            foreach ($decoded as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $expected = trim((string) ($row['expected_output'] ?? ''));
+                if ($expected === '') {
+                    continue;
+                }
+                $cases[] = [
+                    'input' => (string) ($row['input'] ?? ''),
+                    'expected_output' => $expected,
+                ];
+            }
+            return $cases;
+        }
+    }
+
+    $cases = [];
+    foreach (preg_split('/\r?\n/', $raw) ?: [] as $line) {
+        $line = trim($line);
+        if ($line === '') {
+            continue;
+        }
+        $parts = array_map('trim', explode('||', $line, 2));
+        $input = count($parts) === 2 ? $parts[0] : '';
+        $expected = count($parts) === 2 ? $parts[1] : ($parts[0] ?? '');
+        if ($expected === '') {
+            continue;
+        }
+        $cases[] = ['input' => $input, 'expected_output' => $expected];
+    }
+
+    return $cases;
+};
+
 $schemaSql = implode("\n\n", array_filter(array_map(
     static fn (array $dataset): string => trim((string) $dataset['schema_sql']),
     $problem['dataset_records'] ?? []
@@ -43,10 +89,13 @@ $stdinPlaceholder = $subjectSlug === 'java'
     : "Example:\n5 9";
 $sampleCases = $isSqlSubject
     ? []
-    : [
-        ['input' => '5 9', 'expected_output' => '14'],
-        ['input' => '10 25', 'expected_output' => '35'],
+    : $parseNonSqlCases((string) ($problem['expected_query'] ?? ''));
+
+if (!$isSqlSubject && $sampleCases === []) {
+    $sampleCases = [
+        ['input' => '', 'expected_output' => trim((string) ($problem['expected_query'] ?? ''))],
     ];
+}
 $difficultyBadge = $problem['difficulty'] === 'easy' ? 'success' : ($problem['difficulty'] === 'medium' ? 'warning' : 'danger');
 $datasetId = isset($problem['dataset_records'][0]['id']) ? (int) $problem['dataset_records'][0]['id'] : 0;
 $assetVersion = (string) filemtime(__DIR__ . '/assets/js/solve.js');

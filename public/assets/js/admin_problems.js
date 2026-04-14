@@ -55,11 +55,60 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function bindProblemForm() {
     const form = document.getElementById('adminProblemForm');
+    const subjectSelect = document.getElementById('pf_subject');
+    const datasetGroup = document.getElementById('pf_dataset_group');
+    const datasetSelect = document.getElementById('pf_dataset');
+    const expectedLabel = document.getElementById('pf_expected_label');
+    const expectedHelp = document.getElementById('pf_expected_help');
+    const expectedTestWrap = document.getElementById('pf_expected_test_wrap');
     const testButton = document.getElementById('testExpectedQuery');
     const testResult = document.getElementById('problemTestResult');
     const flash = document.getElementById('problemFormFlash');
 
     if (!form) return;
+
+    const getSelectedSubjectSlug = () => {
+      const selected = subjectSelect?.selectedOptions?.[0];
+      return String(selected?.dataset?.subjectSlug || 'sql').toLowerCase();
+    };
+
+    const applySubjectMode = () => {
+      const isSql = getSelectedSubjectSlug() === 'sql';
+
+      if (datasetGroup) {
+        datasetGroup.style.display = isSql ? '' : 'none';
+      }
+
+      if (datasetSelect) {
+        datasetSelect.required = isSql;
+        datasetSelect.disabled = !isSql;
+        if (!isSql) {
+          datasetSelect.value = '';
+        }
+      }
+
+      if (expectedLabel) {
+        expectedLabel.textContent = isSql ? 'Expected Query' : 'Test Cases';
+      }
+
+      if (expectedHelp) {
+        expectedHelp.textContent = isSql
+          ? 'Provide the exact query used for correctness checks.'
+          : 'Use one test case per line: input || expected_output';
+      }
+
+      if (expectedTestWrap) {
+        expectedTestWrap.hidden = !isSql;
+      }
+
+      if (!isSql && testResult) {
+        testResult.hidden = true;
+        testResult.innerHTML = '';
+      }
+    };
+
+    applySubjectMode();
+    subjectSelect?.addEventListener('change', applySubjectMode);
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -76,6 +125,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     testButton?.addEventListener('click', async () => {
+      if (getSelectedSubjectSlug() !== 'sql') {
+        return;
+      }
+
       const datasetId = Number(form.querySelector('[name="dataset_id"]')?.value || 0);
       const query = String(form.querySelector('[name="expected_query"]')?.value || '').trim();
 
