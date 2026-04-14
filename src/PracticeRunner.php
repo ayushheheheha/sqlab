@@ -43,7 +43,8 @@ final class PracticeRunner
             $pdo = $this->sharedHostingMode ? DB::getConnection() : DB::sandboxConnection((string) $this->tempDbName);
             $this->applyExecutionLimit($pdo);
             $statementType = strtoupper((string) strtok(ltrim($query), " \t\r\n"));
-            $queryToRun = $this->sharedHostingMode ? $this->rewritePracticeQuery($query, $statementType) : $query;
+            $queryToRun = sqlab_translate_oracle_sql($query);
+            $queryToRun = $this->sharedHostingMode ? $this->rewritePracticeQuery($queryToRun, $statementType) : $queryToRun;
 
             $startedAt = microtime(true);
             $stmt = $pdo->prepare($queryToRun);

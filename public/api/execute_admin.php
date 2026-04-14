@@ -88,7 +88,8 @@ try {
     }
 
     $started = microtime(true);
-    $stmt = $sandbox->query(rewriteSqlWithMap($query, $tableMap));
+    $queryToRun = sqlab_translate_oracle_sql($query);
+    $stmt = $sandbox->query(rewriteSqlWithMap($queryToRun, $tableMap));
     $rows = $stmt->fetchAll();
     $elapsed = (int) round((microtime(true) - $started) * 1000);
     $columns = [];

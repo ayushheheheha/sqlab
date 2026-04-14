@@ -354,6 +354,40 @@ function sqlab_rewrite_sql_plain_segment(string $segment, array $tableMap): stri
     return $segment;
 }
 
+function sqlab_translate_oracle_sql(string $sql): string
+{
+    $enabled = strtolower((string) ($_ENV['SQL_ACCEPT_ORACLE_SYNTAX'] ?? 'true')) !== 'false';
+
+    if (!$enabled || trim($sql) === '') {
+        return $sql;
+    }
+
+    $translated = $sql;
+
+    // Common Oracle scalar functions.
+    $translated = preg_replace('/\bNVL\s*\(/i', 'IFNULL(', $translated) ?? $translated;
+    $translated = preg_replace('/\bSYSTIMESTAMP\b/i', 'CURRENT_TIMESTAMP', $translated) ?? $translated;
+    $translated = preg_replace('/\bSYSDATE\b/i', 'CURRENT_DATE', $translated) ?? $translated;
+
+    // Common Oracle datatypes.
+    $translated = preg_replace('/\bVARCHAR2\s*\(/i', 'VARCHAR(', $translated) ?? $translated;
+    $translated = preg_replace('/\bNVARCHAR2\s*\(/i', 'VARCHAR(', $translated) ?? $translated;
+    $translated = preg_replace('/\bNUMBER\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)/i', 'DECIMAL($1,$2)', $translated) ?? $translated;
+    $translated = preg_replace('/\bNUMBER\s*\(\s*(\d+)\s*\)/i', 'DECIMAL($1,0)', $translated) ?? $translated;
+    $translated = preg_replace('/\bNUMBER\b/i', 'DECIMAL(18,0)', $translated) ?? $translated;
+    $translated = preg_replace('/\bCLOB\b/i', 'LONGTEXT', $translated) ?? $translated;
+
+    // Common Oracle literals.
+    $translated = preg_replace('/\bTO_DATE\s*\(\s*\'([^\']+)\'\s*,\s*\'YYYY-MM-DD\'\s*\)/i', "STR_TO_DATE('$1','%Y-%m-%d')", $translated) ?? $translated;
+
+    // Oracle pagination style: FETCH FIRST/NEXT n ROWS ONLY -> LIMIT n
+    $translated = preg_replace('/\s+FETCH\s+(?:FIRST|NEXT)\s+(\d+)\s+ROWS\s+ONLY\s*$/i', ' LIMIT $1', $translated) ?? $translated;
+
+    // Keep FROM DUAL compatible with MySQL by leaving as-is.
+
+    return $translated;
+}
+
 function set_auth_flash(string $type, string $message): void
 {
     $_SESSION['auth_flash'] = ['type' => $type, 'message' => $message];

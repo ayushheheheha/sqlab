@@ -85,7 +85,8 @@ final class QueryRunner
         try {
             $pdo = $this->sharedHostingMode ? DB::getConnection() : DB::sandboxConnection((string) $this->tempDbName);
             $this->applyExecutionLimit($pdo);
-            $queryToRun = $this->rewriteSqlWithMap($userQuery, $this->tableMap);
+            $queryToRun = sqlab_translate_oracle_sql($userQuery);
+            $queryToRun = $this->rewriteSqlWithMap($queryToRun, $this->tableMap);
 
             $startedAt = microtime(true);
             $stmt = $pdo->query($queryToRun);

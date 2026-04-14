@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const resetDbButton = document.getElementById('resetPracticeDb');
   const executionTime = document.getElementById('practiceExecutionTime');
   const stdinInput = document.getElementById('practiceStdin');
+  const MAX_RESULT_ENTRIES = 40;
 
   if (!isSqlMode) {
     const logsTabButton = document.querySelector('.solve-tabs button[data-tab="logs"]');
@@ -76,7 +77,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     setLoadingState(runButton, true, config.runLabel || (isSqlMode ? 'Run SQL' : 'Run Code'));
-    resultsPanel.innerHTML = `<div class="empty-state">${escapeHtml(isSqlMode ? 'Running SQL...' : 'Running code...')}</div>`;
 
     try {
       const query = editor.getValue();
@@ -88,20 +88,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (!result.success) {
         if (isSqlMode) {
-          resultsPanel.innerHTML = `<div class="solve-flash error">${escapeHtml(result.error || 'Execution failed.')}</div>`;
+          appendResultEntry(
+            `<div class="solve-flash error">${escapeHtml(result.error || 'Execution failed.')}</div>`,
+            query,
+            String(result.statement_type || 'SQL')
+          );
           appendLog(result.error || 'Execution failed.', 'error', query, String(result.statement_type || (isSqlMode ? 'SQL' : editorLanguage.toUpperCase())));
         } else {
-          renderCodeOutput(result);
+          appendResultEntry(
+            renderCodeOutputHtml(result),
+            query,
+            'CODE'
+          );
         }
         return;
       }
 
       if (!isSqlMode) {
-        renderCodeOutput(result);
+        appendResultEntry(
+          renderCodeOutputHtml(result),
+          query,
+          'CODE'
+        );
       } else if ((result.columns || []).length > 0) {
-        renderTable(resultsPanel, result.columns || [], result.rows || []);
+        appendResultEntry(
+          renderTableHtml(result.columns || [], result.rows || []),
+          query,
+          String(result.statement_type || 'SELECT')
+        );
       } else {
-        renderMutationOutput(result);
+        appendResultEntry(
+          renderMutationOutputHtml(result),
+          query,
+          String(result.statement_type || 'SQL')
+        );
       }
 
       if (isSqlMode) {
@@ -133,7 +153,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      resultsPanel.innerHTML = '<div class="empty-state">Database reset. Run SQL to create your own schema.</div>';
+      appendResultEntry(
+        '<div class="solve-flash warning">Database reset. Run SQL to create your own schema.</div>',
+        'RESET DATABASE',
+        'SYSTEM'
+      );
       appendLog(result.message || 'Database reset.', 'warning', 'RESET DATABASE');
       window.showToast?.(result.message || 'Database reset.', 'warning');
     } finally {
@@ -141,16 +165,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function renderTable(panel, columns, rows) {
+  function renderTableHtml(columns, rows) {
     const head = columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('');
     const body = rows.length
       ? rows.map((row) => `<tr>${columns.map((column) => `<td>${escapeHtml(row[column] ?? '')}</td>`).join('')}</tr>`).join('')
       : `<tr><td colspan="${Math.max(1, columns.length)}">No rows returned.</td></tr>`;
 
-    panel.innerHTML = `<div class="table-shell solve-result-table"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+    return `<div class="table-shell solve-result-table"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
 
-  function renderMutationOutput(result) {
+  function renderMutationOutputHtml(result) {
     const tables = Array.isArray(result.tables) ? result.tables : [];
     const columns = Array.isArray(result.table_columns) ? result.table_columns : [];
     const preview = result.table_preview || null;
@@ -175,10 +199,10 @@ document.addEventListener('DOMContentLoaded', () => {
       html += `<div class="card" style="padding:14px; margin-top:10px;"><strong>Data Preview${preview.table ? `: ${escapeHtml(preview.table)}` : ''}</strong><div class="table-shell" style="margin-top:10px;"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div></div>`;
     }
 
-    resultsPanel.innerHTML = html;
+    return html;
   }
 
-  function renderCodeOutput(result) {
+  function renderCodeOutputHtml(result) {
     const stdout = String(result.stdout || '').trim();
     const stderr = String(result.stderr || '').trim();
     const compileOutput = String(result.compile_output || '').trim();
@@ -186,11 +210,42 @@ document.addEventListener('DOMContentLoaded', () => {
     const output = stdout || compileOutput || stderr || fallbackOutput;
 
     if (!output) {
-      resultsPanel.innerHTML = '<div class="empty-state">Program finished with no output.</div>';
+      return '<div class="empty-state">Program finished with no output.</div>';
+    }
+
+    return `<pre class="code-block">${escapeHtml(output)}</pre>`;
+  }
+
+  function appendResultEntry(contentHtml, query, statementType = 'SQL') {
+    if (!resultsPanel) {
       return;
     }
 
-    resultsPanel.innerHTML = `<pre class="code-block">${escapeHtml(output)}</pre>`;
+    if (resultsPanel.querySelector('.empty-state')) {
+      resultsPanel.innerHTML = '';
+    }
+
+    const now = new Date();
+    const compactQuery = String(query || '').replace(/\s+/g, ' ').trim();
+    const queryPreview = compactQuery.length > 180 ? `${compactQuery.slice(0, 177)}...` : compactQuery;
+
+    const entry = document.createElement('article');
+    entry.className = 'card';
+    entry.style.marginTop = '10px';
+    entry.innerHTML = `
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+        <span class="badge badge-muted">${escapeHtml(statementType || 'SQL')}</span>
+        <span class="muted" style="font-size:12px;">${escapeHtml(now.toLocaleTimeString())}</span>
+      </div>
+      ${queryPreview ? `<pre class="code-block" style="margin:0 0 10px 0;">${escapeHtml(queryPreview)}</pre>` : ''}
+      ${contentHtml}
+    `;
+
+    resultsPanel.prepend(entry);
+
+    while (resultsPanel.children.length > MAX_RESULT_ENTRIES) {
+      resultsPanel.removeChild(resultsPanel.lastElementChild);
+    }
   }
 
   function appendLog(message, type, query = '', statementType = '') {
