@@ -7,6 +7,7 @@ final class PracticeRunner
     private int $userId;
     private ?string $tempDbName = null;
     private const SESSION_KEY = 'practice_sandbox_db';
+    private static bool $staleCleanupChecked = false;
 
     public function __construct(int $userId)
     {
@@ -109,8 +110,97 @@ final class PracticeRunner
         }
     }
 
+    public function destroyAllForUser(): int
+    {
+        $root = DB::getConnection();
+        $pattern = sprintf('sqlab_practice_%d_', max(0, $this->userId));
+        $stmt = $root->prepare(
+            'SELECT SCHEMA_NAME
+             FROM INFORMATION_SCHEMA.SCHEMATA
+             WHERE SCHEMA_NAME LIKE :name_like'
+        );
+        $stmt->execute(['name_like' => $pattern . '%']);
+
+        $dropped = 0;
+
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $dbName) {
+            $name = (string) $dbName;
+
+            if (!preg_match('/^sqlab_practice_\d+_[a-z0-9]+$/', $name)) {
+                continue;
+            }
+
+            try {
+                $root->exec(sprintf("REVOKE ALL PRIVILEGES ON `%s`.* FROM '%s'@'localhost'", $name, $this->sandboxUser()));
+            } catch (Throwable) {
+            }
+
+            try {
+                $root->exec(sprintf('DROP DATABASE IF EXISTS `%s`', $name));
+                $dropped++;
+            } catch (Throwable) {
+            }
+        }
+
+        unset($_SESSION[self::SESSION_KEY]);
+        $this->tempDbName = null;
+
+        return $dropped;
+    }
+
+    public static function cleanupStaleSandboxes(int $maxAgeHours = 24): int
+    {
+        $maxAgeHours = max(1, $maxAgeHours);
+        $root = DB::getConnection();
+        $stmt = $root->query(
+            'SELECT SCHEMA_NAME, CREATE_TIME
+             FROM INFORMATION_SCHEMA.SCHEMATA
+             WHERE SCHEMA_NAME LIKE "sqlab_practice_%"'
+        );
+
+        $dropped = 0;
+        $cutoff = time() - ($maxAgeHours * 3600);
+        $sandboxUser = $_ENV['DB_SANDBOX_USER'] ?? 'sqlab_sandbox';
+
+        foreach ($stmt->fetchAll() as $row) {
+            $dbName = (string) ($row['SCHEMA_NAME'] ?? '');
+            $createTimeRaw = (string) ($row['CREATE_TIME'] ?? '');
+
+            if (!preg_match('/^sqlab_practice_\d+_[a-z0-9]+$/', $dbName)) {
+                continue;
+            }
+
+            $createTs = strtotime($createTimeRaw ?: '');
+            if ($createTs === false || $createTs > $cutoff) {
+                continue;
+            }
+
+            try {
+                $root->exec(sprintf("REVOKE ALL PRIVILEGES ON `%s`.* FROM '%s'@'localhost'", $dbName, $sandboxUser));
+            } catch (Throwable) {
+            }
+
+            try {
+                $root->exec(sprintf('DROP DATABASE IF EXISTS `%s`', $dbName));
+                $dropped++;
+            } catch (Throwable) {
+            }
+        }
+
+        return $dropped;
+    }
+
     private function ensureSandbox(): void
     {
+        if (!self::$staleCleanupChecked) {
+            self::$staleCleanupChecked = true;
+
+            try {
+                self::cleanupStaleSandboxes((int) ($_ENV['PRACTICE_SANDBOX_MAX_AGE_HOURS'] ?? 24));
+            } catch (Throwable) {
+            }
+        }
+
         $existing = $this->loadSessionDbName();
         $charset = $_ENV['DB_CHARSET'] ?? 'utf8mb4';
         $rootPdo = DB::getConnection();

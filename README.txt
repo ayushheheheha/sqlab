@@ -39,3 +39,8 @@ Seed starter Python/Java questions:
 Quizathon setup:
 1. Import `migrations/006_quizathon.sql`.
 2. This creates quiz tables and seeds Quiz 1, Quiz 2, and Endterm samples for SQL/Python/Java.
+
+SQL Practice sandbox storage notes:
+1. SQL Practice uses per-user temporary databases named like `sqlab_practice_*`.
+2. Sandboxes are cleaned automatically on logout.
+3. Stale sandboxes are pruned automatically (default: 24 hours, configurable via `PRACTICE_SANDBOX_MAX_AGE_HOURS`).

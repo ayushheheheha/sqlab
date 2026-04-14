@@ -234,6 +234,16 @@ final class Auth
 
     public static function logout(): void
     {
+        $userId = (int) ($_SESSION['user_id'] ?? 0);
+
+        if ($userId > 0) {
+            try {
+                $runner = new PracticeRunner($userId);
+                $runner->destroyAllForUser();
+            } catch (Throwable) {
+            }
+        }
+
         $_SESSION = [];
 
         if (ini_get('session.use_cookies')) {
