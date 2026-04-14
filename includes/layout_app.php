@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 function render_app_layout(string $title, array $user, callable $content): void
 {
+    $activeSubject = get_active_subject();
+    $subjectSlug = (string) ($activeSubject['slug'] ?? 'sql');
     $navItems = [
-        ['label' => 'Dashboard', 'href' => 'dashboard.php'],
+        ['label' => 'Subjects', 'href' => 'dashboard.php'],
+        ['label' => 'Dashboard', 'href' => 'subject_dashboard.php?subject=' . urlencode($subjectSlug)],
         ['label' => 'Problems', 'href' => 'problems.php'],
         ['label' => 'Practice Lab', 'href' => 'practice.php'],
         ['label' => 'Leaderboard', 'href' => 'leaderboard.php'],
@@ -31,11 +34,19 @@ function render_app_layout(string $title, array $user, callable $content): void
                 <a class="sidebar-logo" href="<?= e(app_url('dashboard.php')) ?>">GenzLAB</a>
                 <nav>
                     <?php foreach ($navItems as $item): ?>
-                        <a class="sidebar-link <?= is_active_path($item['href']) ? 'active' : '' ?>" href="<?= e(app_url($item['href'])) ?>">
+                        <?php
+                        $isActive = is_active_path($item['href']);
+
+                        if (str_starts_with($item['href'], 'subject_dashboard.php') && is_active_path('subject_dashboard.php')) {
+                            $isActive = true;
+                        }
+                        ?>
+                        <a class="sidebar-link <?= $isActive ? 'active' : '' ?>" href="<?= e(app_url($item['href'])) ?>">
                             <?= e($item['label']) ?>
                         </a>
                     <?php endforeach; ?>
                 </nav>
+                <div class="sidebar-section-label">Track: <?= e($activeSubject['name'] ?? 'SQL') ?></div>
                 <?php if (($user['role'] ?? 'student') === 'admin'): ?>
                     <div>
                         <p class="sidebar-section-label">Admin Panel</p>

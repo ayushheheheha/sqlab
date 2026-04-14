@@ -14,12 +14,39 @@ if (!$problem || (int) $problem['is_active'] !== 1) {
     redirect('problems.php');
 }
 
+if (!empty($problem['subject_slug'])) {
+    set_active_subject_slug((string) $problem['subject_slug']);
+}
+
+$subjectSlug = strtolower((string) ($problem['subject_slug'] ?? 'sql'));
+$isSqlSubject = $subjectSlug === 'sql';
+$editorLanguage = $isSqlSubject ? 'sql' : ($subjectSlug === 'java' ? 'java' : 'python');
+
 $schemaSql = implode("\n\n", array_filter(array_map(
     static fn (array $dataset): string => trim((string) $dataset['schema_sql']),
     $problem['dataset_records'] ?? []
 )));
 preg_match('/CREATE\s+TABLE\s+`?([a-zA-Z0-9_]+)`?/i', $schemaSql, $tableMatch);
 $starterQuery = 'SELECT * FROM ' . ($tableMatch[1] ?? 'users') . ' LIMIT 10';
+
+if (!$isSqlSubject) {
+    $starterQuery = $subjectSlug === 'java'
+        ? "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"hello world\");\n    }\n}" 
+        : "print('hello world')";
+}
+
+$runLabel = $isSqlSubject ? 'Run Query' : 'Run Code';
+$editorShortcutHint = $isSqlSubject ? '(Ctrl+Enter)' : '(Ctrl+Enter)';
+$starterText = $isSqlSubject ? 'Run your query to see results.' : 'Run your code to see results.';
+$stdinPlaceholder = $subjectSlug === 'java'
+    ? "Example:\n7 8"
+    : "Example:\n5 9";
+$sampleCases = $isSqlSubject
+    ? []
+    : [
+        ['input' => '5 9', 'expected_output' => '14'],
+        ['input' => '10 25', 'expected_output' => '35'],
+    ];
 $difficultyBadge = $problem['difficulty'] === 'easy' ? 'success' : ($problem['difficulty'] === 'medium' ? 'warning' : 'danger');
 $datasetId = isset($problem['dataset_records'][0]['id']) ? (int) $problem['dataset_records'][0]['id'] : 0;
 $assetVersion = (string) filemtime(__DIR__ . '/assets/js/solve.js');
@@ -58,46 +85,75 @@ $chartAssetVersion = (string) (file_exists($chartAssetPath) ? filemtime($chartAs
                 <p><?= nl2br(e($problem['description'])) ?></p>
             </details>
             <div class="solve-toolbar">
-                <button class="btn-primary" id="runQuery" type="button">Run Query <span class="muted">(Ctrl+Enter)</span></button>
+                <button class="btn-primary" id="runQuery" type="button"><?= e($runLabel) ?> <span class="muted"><?= e($editorShortcutHint) ?></span></button>
                 <button class="btn-ghost" id="resetQuery" type="button">Reset</button>
-                <button class="btn-ghost" id="openSchema" type="button">DB Schema</button>
+                <?php if ($isSqlSubject): ?>
+                    <button class="btn-ghost" id="openSchema" type="button">DB Schema</button>
+                <?php endif; ?>
                 <button class="btn-ghost" id="hintButton" type="button">Hint 1</button>
                 <span class="solve-time" id="executionTime"></span>
             </div>
+            <?php if (!$isSqlSubject): ?>
+                <div class="card" style="padding:10px 14px; margin-top:10px;">
+                    <label for="solveStdin" style="display:block; font-weight:600; margin-bottom:6px;">Program Input (stdin)</label>
+                    <textarea id="solveStdin" rows="3" class="code-editor" style="min-height:78px; width:100%;" placeholder="<?= e($stdinPlaceholder) ?>"></textarea>
+                </div>
+            <?php endif; ?>
             <div class="solve-hint" id="hintBox" hidden></div>
             <div class="monaco-shell" id="editor"></div>
         </section>
         <section class="solve-right">
+            <?php if (!$isSqlSubject): ?>
+                <div class="solve-cases">
+                    <strong>Sample Test Cases</strong>
+                    <div class="solve-cases-list">
+                        <?php foreach ($sampleCases as $index => $case): ?>
+                            <div class="solve-case-row">
+                                <span class="badge badge-muted">Case <?= (int) ($index + 1) ?></span>
+                                <div class="solve-case-meta">
+                                    <span><strong>Input:</strong> <?= e($case['input']) ?></span>
+                                    <span><strong>Expected:</strong> <?= e($case['expected_output']) ?></span>
+                                </div>
+                                <button class="btn-ghost sample-stdin-btn" type="button" data-sample-input="<?= e($case['input']) ?>">Use Input</button>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
             <div class="solve-tabs" role="tablist">
-                <button class="active" data-tab="results" type="button">Results</button>
-                <button data-tab="chart" type="button" id="chartTabButton" disabled>Chart</button>
-                <button data-tab="expected" type="button">Expected</button>
-                <button data-tab="submissions" type="button">Submissions</button>
+                <button class="active" data-tab="results" type="button"><?= e($isSqlSubject ? 'Results' : 'Output') ?></button>
+                <?php if ($isSqlSubject): ?>
+                    <button data-tab="chart" type="button" id="chartTabButton" disabled>Chart</button>
+                    <button data-tab="expected" type="button">Expected</button>
+                    <button data-tab="submissions" type="button">Submissions</button>
+                <?php endif; ?>
             </div>
             <div class="solve-output">
                 <div class="solve-tab-panel active" id="tab-results">
-                    <div class="empty-state">Run your query to see results.</div>
+                    <div class="empty-state"><?= e($starterText) ?></div>
                 </div>
-                <div class="solve-tab-panel" id="tab-chart">
-                    <div class="chart-toolbar">
-                        <label for="chartType">Chart type</label>
-                        <select id="chartType">
-                            <option value="bar">Bar</option>
-                            <option value="line">Line</option>
-                            <option value="pie">Pie</option>
-                        </select>
+                <?php if ($isSqlSubject): ?>
+                    <div class="solve-tab-panel" id="tab-chart">
+                        <div class="chart-toolbar">
+                            <label for="chartType">Chart type</label>
+                            <select id="chartType">
+                                <option value="bar">Bar</option>
+                                <option value="line">Line</option>
+                                <option value="pie">Pie</option>
+                            </select>
+                        </div>
+                        <div class="chart-wrap">
+                            <canvas id="resultChart"></canvas>
+                        </div>
+                        <p class="muted" id="chartMessage">Run a query to get a chart suggestion.</p>
                     </div>
-                    <div class="chart-wrap">
-                        <canvas id="resultChart"></canvas>
+                    <div class="solve-tab-panel" id="tab-expected">
+                        <div class="empty-state">Open this tab to fetch the expected output.</div>
                     </div>
-                    <p class="muted" id="chartMessage">Run a query to get a chart suggestion.</p>
-                </div>
-                <div class="solve-tab-panel" id="tab-expected">
-                    <div class="empty-state">Open this tab to fetch the expected output.</div>
-                </div>
-                <div class="solve-tab-panel" id="tab-submissions">
-                    <div class="empty-state">Open this tab to fetch your recent submissions.</div>
-                </div>
+                    <div class="solve-tab-panel" id="tab-submissions">
+                        <div class="empty-state">Open this tab to fetch your recent submissions.</div>
+                    </div>
+                <?php endif; ?>
             </div>
         </section>
     </main>
@@ -128,6 +184,15 @@ $chartAssetVersion = (string) (file_exists($chartAssetPath) ? filemtime($chartAs
         window.SQLAB_SOLVE = {
             problemId: <?= (int) $problem['id'] ?>,
             starterQuery: <?= json_encode($starterQuery, JSON_THROW_ON_ERROR) ?>,
+            editorLanguage: <?= json_encode($editorLanguage, JSON_THROW_ON_ERROR) ?>,
+            subjectSlug: <?= json_encode($subjectSlug, JSON_THROW_ON_ERROR) ?>,
+            runLabel: <?= json_encode($runLabel, JSON_THROW_ON_ERROR) ?>,
+            resultEmptyText: <?= json_encode($starterText, JSON_THROW_ON_ERROR) ?>,
+            sampleCases: <?= json_encode($sampleCases, JSON_THROW_ON_ERROR) ?>,
+            features: {
+                schema: <?= $isSqlSubject ? 'true' : 'false' ?>,
+                chart: <?= $isSqlSubject ? 'true' : 'false' ?>
+            },
             endpoints: {
                 execute: <?= json_encode(app_url('api/execute.php'), JSON_THROW_ON_ERROR) ?>,
                 hint: <?= json_encode(app_url('api/hint.php'), JSON_THROW_ON_ERROR) ?>,

@@ -10,7 +10,9 @@ $problemId = (int) ($_GET['id'] ?? 0);
 $problem = $problemId > 0 ? Problem::findWithDatasets($problemId) : null;
 $datasets = Dataset::all();
 $categories = Problem::categories();
+$subjects = Subject::allActive();
 $selectedDatasetId = isset($problem['dataset_records'][0]['id']) ? (int) $problem['dataset_records'][0]['id'] : 0;
+$selectedSubjectId = isset($problem['subject_id']) ? (int) $problem['subject_id'] : 1;
 ?>
 <form id="adminProblemForm" class="admin-form">
     <?= csrf_input() ?>
@@ -25,6 +27,16 @@ $selectedDatasetId = isset($problem['dataset_records'][0]['id']) ? (int) $proble
         <textarea id="pf_description" name="description" rows="6" required><?= e($problem['description'] ?? '') ?></textarea>
     </div>
     <div class="grid grid-2">
+        <div class="form-group">
+            <label for="pf_subject">Subject</label>
+            <select id="pf_subject" name="subject_id" required>
+                <?php foreach ($subjects as $subject): ?>
+                    <option value="<?= (int) $subject['id'] ?>" <?= $selectedSubjectId === (int) $subject['id'] ? 'selected' : '' ?>>
+                        <?= e($subject['name']) ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
         <div class="form-group">
             <label for="pf_difficulty">Difficulty</label>
             <select id="pf_difficulty" name="difficulty">

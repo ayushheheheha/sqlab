@@ -25,6 +25,7 @@ render_app_layout('Admin Problems', $user, static function () use ($problems): v
                 <thead>
                 <tr>
                     <th>Title</th>
+                    <th>Subject</th>
                     <th>Difficulty</th>
                     <th>Category</th>
                     <th>Dataset</th>
@@ -37,6 +38,7 @@ render_app_layout('Admin Problems', $user, static function () use ($problems): v
                 <?php foreach ($problems as $problem): ?>
                     <tr data-problem-id="<?= (int) $problem['id'] ?>">
                         <td><?= e($problem['title']) ?></td>
+                        <td><?= e((string) ($problem['subject_name'] ?? 'SQL')) ?></td>
                         <td>
                             <span class="badge <?= $problem['difficulty'] === 'easy' ? 'badge-success' : ($problem['difficulty'] === 'medium' ? 'badge-warning' : 'badge-danger') ?>">
                                 <?= e(ucfirst($problem['difficulty'])) ?>
@@ -56,7 +58,7 @@ render_app_layout('Admin Problems', $user, static function () use ($problems): v
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$problems): ?>
-                    <tr><td colspan="7">No problems found.</td></tr>
+                    <tr><td colspan="8">No problems found.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

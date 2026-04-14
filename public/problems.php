@@ -7,10 +7,29 @@ require_once dirname(__DIR__) . '/includes/layout_app.php';
 
 Auth::requireLogin();
 $user = Auth::getCurrentUser();
-$problems = Problem::allActive();
+$subjectFromQuery = trim((string) ($_GET['subject'] ?? ''));
+
+if ($subjectFromQuery !== '') {
+    set_active_subject_slug($subjectFromQuery);
+}
+
+$activeSubject = get_active_subject();
+$subjectId = (int) ($activeSubject['id'] ?? 0);
+$problems = Problem::allActive($subjectId > 0 ? $subjectId : null);
 $totalProblems = count($problems);
-$progressStmt = DB::getConnection()->prepare('SELECT problem_id, status FROM user_progress WHERE user_id = :user_id');
-$progressStmt->execute(['user_id' => (int) $user['id']]);
+$progressSql = 'SELECT up.problem_id, up.status
+                FROM user_progress up
+                INNER JOIN problems p ON p.id = up.problem_id
+                WHERE up.user_id = :user_id';
+$progressParams = ['user_id' => (int) $user['id']];
+
+if (Subject::isReady() && $subjectId > 0) {
+    $progressSql .= ' AND p.subject_id = :subject_id';
+    $progressParams['subject_id'] = $subjectId;
+}
+
+$progressStmt = DB::getConnection()->prepare($progressSql);
+$progressStmt->execute($progressParams);
 $progress = [];
 
 foreach ($progressStmt->fetchAll() as $row) {
@@ -20,12 +39,12 @@ $solvedCount = count(array_filter($progress, static fn (string $status): bool =>
 $categories = array_values(array_unique(array_map(static fn (array $problem): string => (string) $problem['category'], $problems)));
 sort($categories);
 
-render_app_layout('Problems', $user, static function () use ($problems, $progress, $solvedCount, $totalProblems, $categories): void {
+render_app_layout($activeSubject['name'] . ' Problems', $user, static function () use ($problems, $progress, $solvedCount, $totalProblems, $categories, $activeSubject): void {
     ?>
     <section class="page-header">
         <div>
             <h1>Problems</h1>
-            <p class="page-subtitle"><?= $solvedCount ?>/<?= $totalProblems ?> solved. Pick a challenge and validate your SQL against real sample data.</p>
+            <p class="page-subtitle"><?= $solvedCount ?>/<?= $totalProblems ?> solved in <?= e($activeSubject['name']) ?>. Pick a challenge and keep upskilling.</p>
         </div>
     </section>
 

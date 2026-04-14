@@ -14,6 +14,7 @@ $title = trim((string) ($payload['title'] ?? ''));
 $description = trim((string) ($payload['description'] ?? ''));
 $difficulty = (string) ($payload['difficulty'] ?? 'easy');
 $category = trim((string) ($payload['category'] ?? ''));
+$subjectId = (int) ($payload['subject_id'] ?? 0);
 $datasetId = (int) ($payload['dataset_id'] ?? 0);
 $expectedQuery = trim((string) ($payload['expected_query'] ?? ''));
 
@@ -35,12 +36,19 @@ if ($datasetId <= 0) {
     exit;
 }
 
+if ($subjectId <= 0) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'message' => 'Subject is required.']);
+    exit;
+}
+
 try {
     $data = [
         'title' => $title,
         'description' => $description,
         'difficulty' => $difficulty,
         'category' => $category,
+        'subject_id' => $subjectId,
         'dataset_id' => $datasetId,
         'expected_query' => $expectedQuery,
         'dataset_sql' => trim((string) ($payload['dataset_sql'] ?? '')),

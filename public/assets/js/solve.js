@@ -1,5 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   const config = window.SQLAB_SOLVE;
+  const isSqlMode = (config.subjectSlug || 'sql') === 'sql';
+  const editorLanguage = config.editorLanguage || (isSqlMode ? 'sql' : 'python');
   let editor;
   let hintLevel = 1;
   let expectedLoaded = false;
@@ -26,6 +28,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const chartTabButton = document.getElementById('chartTabButton');
   const runButton = document.getElementById('runQuery');
   const editorHost = document.getElementById('editor');
+  const openSchemaButton = document.getElementById('openSchema');
+  const stdinInput = document.getElementById('solveStdin');
+
+  if (!isSqlMode) {
+    openSchemaButton?.setAttribute('hidden', 'hidden');
+    chartTabButton?.setAttribute('hidden', 'hidden');
+  }
 
   const currentTheme = () => document.documentElement.getAttribute('data-theme') === 'dark' ? 'vs-dark' : 'vs';
   const chartColor = () => document.documentElement.getAttribute('data-theme') === 'dark' ? 'rgba(91, 91, 214, 0.7)' : 'rgba(31, 42, 68, 0.7)';
@@ -47,7 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
         clearTimeout(monacoReadyTimeout);
         editor = monaco.editor.create(editorHost, {
           value: config.starterQuery,
-          language: 'sql',
+          language: editorLanguage,
           theme: currentTheme(),
           fontFamily: 'Consolas, "Courier New", monospace',
           fontSize: 14,
@@ -79,9 +88,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('runQuery')?.addEventListener('click', runQuery);
   document.getElementById('resetQuery')?.addEventListener('click', () => setEditorValue(config.starterQuery));
-  document.getElementById('openSchema')?.addEventListener('click', () => schemaModal.hidden = false);
+  document.getElementById('openSchema')?.addEventListener('click', () => {
+    if (!isSqlMode) {
+      return;
+    }
+    schemaModal.hidden = false;
+  });
   document.getElementById('closeSchema')?.addEventListener('click', () => schemaModal.hidden = true);
   chartType?.addEventListener('change', () => renderChart());
+  document.querySelectorAll('.sample-stdin-btn').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!stdinInput) {
+        return;
+      }
+      stdinInput.value = String(button.dataset.sampleInput || '');
+      stdinInput.focus();
+    });
+  });
 
   schemaModal?.addEventListener('click', (event) => {
     if (event.target === schemaModal) {
@@ -155,42 +178,72 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    setLoadingState(runButton, true, 'Run Query');
+    setLoadingState(runButton, true, config.runLabel || 'Run Query');
 
     try {
-      resultsPanel.innerHTML = '<div class="empty-state">Running query...</div>';
-      const result = await postJson(config.endpoints.execute, { problem_id: config.problemId, query });
+      resultsPanel.innerHTML = `<div class="empty-state">${escapeHtml(isSqlMode ? 'Running query...' : 'Running code...')}</div>`;
+      const result = await postJson(config.endpoints.execute, {
+        problem_id: config.problemId,
+        query,
+        stdin: isSqlMode ? '' : String(stdinInput?.value || ''),
+        test_cases: isSqlMode ? [] : (config.sampleCases || []),
+      });
       executionTime.textContent = result.execution_ms ? `${result.execution_ms} ms` : '';
-      lastResult = (result.success && Number(result.row_count) > 0) ? result : null;
-      chartTabButton.disabled = !(result.success && Number(result.row_count) > 0);
+      lastResult = (isSqlMode && result.success && Number(result.row_count) > 0) ? result : null;
+      if (chartTabButton) {
+        chartTabButton.disabled = !isSqlMode || !(result.success && Number(result.row_count) > 0);
+      }
       currentSuggestedChart = result.success ? suggestChartType(result) : null;
 
       if (!result.success) {
-        resultsPanel.innerHTML = `<div class="solve-flash error">${escapeHtml(result.error || 'Query failed.')}</div>`;
+        if (!isSqlMode) {
+          renderCodeOutput(result);
+        } else {
+          resultsPanel.innerHTML = `<div class="solve-flash error">${escapeHtml(result.error || 'Query failed.')}</div>`;
+        }
       } else if (result.is_correct) {
         const badgeText = result.badges?.length ? ` Badges: ${result.badges.join(', ')}.` : '';
-        resultsPanel.innerHTML = `<div class="solve-flash correct">Correct! +${result.xp_awarded || 0} XP awarded.${escapeHtml(badgeText)}</div>`;
-        appendTable(resultsPanel, result);
+        const statusPrefix = isSqlMode ? 'Correct!' : 'Accepted!';
+        resultsPanel.innerHTML = `<div class="solve-flash correct">${statusPrefix} +${result.xp_awarded || 0} XP awarded.${escapeHtml(badgeText)}</div>`;
+        if (isSqlMode) {
+          appendTable(resultsPanel, result);
+        } else {
+          renderCodeOutput(result);
+        }
       } else {
-        resultsPanel.innerHTML = '<div class="solve-flash warning">Wrong answer - try again.</div>';
-        appendTable(resultsPanel, result);
+        const wrongMessage = isSqlMode
+          ? 'Wrong answer - try again.'
+          : `Output mismatch - expected output did not match. ${escapeHtml(result.status || '')}`;
+        resultsPanel.innerHTML = `<div class="solve-flash warning">${wrongMessage}</div>`;
+        if (isSqlMode) {
+          appendTable(resultsPanel, result);
+        } else {
+          renderCodeOutput(result);
+        }
       }
 
-      if (currentSuggestedChart) {
+      if (isSqlMode && currentSuggestedChart) {
         chartType.value = currentSuggestedChart;
         chartMessage.textContent = `Suggested chart: ${currentSuggestedChart}. You can override it.`;
       } else {
-        chartMessage.textContent = 'No chart suggestion for this result shape.';
+        chartMessage.textContent = isSqlMode ? 'No chart suggestion for this result shape.' : 'Charts are available for SQL result sets only.';
       }
 
-      renderChart();
+      if (isSqlMode) {
+        renderChart();
+      }
       submissionsLoaded = false;
     } finally {
-      setLoadingState(runButton, false, 'Run Query');
+      setLoadingState(runButton, false, config.runLabel || 'Run Query');
     }
   }
 
   async function renderChart() {
+    if (!isSqlMode) {
+      chartMessage.textContent = 'Charts are available for SQL result sets only.';
+      return;
+    }
+
     if (chartInstance) {
       chartInstance.destroy();
       chartInstance = null;
@@ -627,6 +680,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderResultTable(panel, result, includeFlash) {
+    if (!panel) {
+      return;
+    }
+
     if (!result.success) {
       panel.innerHTML = `<div class="solve-flash error">${escapeHtml(result.error || 'Unable to load output.')}</div>`;
       return;
@@ -637,6 +694,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function appendTable(panel, result) {
+    if (!panel) {
+      return;
+    }
+
     const columns = result.columns || [];
     const rows = result.rows || [];
     const table = document.createElement('div');
@@ -652,6 +713,34 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById(`${panelPrefix}${key}`)?.classList.add('active');
   }
 
+  function renderCodeOutput(result) {
+    const stdout = String(result.stdout || '').trim();
+    const stderr = String(result.stderr || '').trim();
+    const compileOutput = String(result.compile_output || '').trim();
+    const fallbackOutput = String(result.display_output || '').trim();
+    const output = stdout || compileOutput || stderr || fallbackOutput;
+
+    const caseResults = Array.isArray(result.case_results) ? result.case_results : [];
+    let html = '';
+
+    if (caseResults.length) {
+      html += `<div class="solve-case-results">${caseResults.map((row, index) => `
+        <div class="solve-case-result ${row.passed ? 'pass' : 'fail'}">
+          <strong>Case ${index + 1}: ${row.passed ? 'Passed' : 'Failed'}</strong>
+          <div>Input: ${escapeHtml(row.input || '')}</div>
+          <div>Expected: ${escapeHtml(row.expected_output || '')}</div>
+          <div>Actual: ${escapeHtml(row.actual_output || '')}</div>
+        </div>`).join('')}</div>`;
+    }
+
+    if (!output) {
+      resultsPanel.innerHTML = `${html}<div class="empty-state">Program finished with no output.</div>`;
+      return;
+    }
+
+    resultsPanel.innerHTML = `${html}<pre class="code-block">${escapeHtml(output)}</pre>`;
+  }
+
   function ensureFallbackEditor(message) {
     if (!editorHost || fallbackEditor) {
       return;
@@ -662,7 +751,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fallbackEditor.className = 'fallback-sql-editor';
     fallbackEditor.spellcheck = false;
     fallbackEditor.value = config.starterQuery || '';
-    fallbackEditor.setAttribute('aria-label', 'SQL editor');
+    fallbackEditor.setAttribute('aria-label', isSqlMode ? 'SQL editor' : 'Code editor');
     editorHost.appendChild(fallbackEditor);
 
     if (message) {

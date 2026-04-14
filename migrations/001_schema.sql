@@ -13,6 +13,16 @@ CREATE TABLE users (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE subjects (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    slug VARCHAR(40) NOT NULL UNIQUE,
+    name VARCHAR(80) NOT NULL,
+    description VARCHAR(255) NOT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE problems (
     id INT AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(160) NOT NULL,
@@ -24,9 +34,11 @@ CREATE TABLE problems (
     hint1 TEXT DEFAULT NULL,
     hint2 TEXT DEFAULT NULL,
     hint3 TEXT DEFAULT NULL,
+    subject_id INT NOT NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     created_by INT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_problems_subject FOREIGN KEY (subject_id) REFERENCES subjects(id),
     CONSTRAINT fk_problems_created_by FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
@@ -307,18 +319,24 @@ VALUES
 ('Speed Demon', 'Submit a correct query in 150ms or less.', '<svg viewBox="0 0 24 24" fill="none"><path d="M12 8v5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/></svg>', 30),
 ('Hard Hitter', 'Solve a hard SQL challenge.', '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4z" stroke="currentColor" stroke-width="2"/><path d="M9.5 12.5l1.7 1.7 3.3-4.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>', 35);
 
-INSERT INTO problems (title, description, difficulty, category, expected_query, dataset_sql, hint1, hint2, hint3, is_active, created_by)
+INSERT INTO subjects (slug, name, description, is_active, sort_order)
 VALUES
-('List all ecommerce customers', 'Return every ecommerce customer with their city and signup date ordered by signup date.', 'easy', 'SELECT Basics', 'SELECT full_name, city, signup_date FROM users ORDER BY signup_date', '', 'Start from the users table.', 'Select only the requested columns.', 'Sort by signup_date ascending.', 1, 1),
-('Delivered order totals', 'Show each delivered order id with its total amount from the ecommerce dataset.', 'easy', 'Filtering', 'SELECT id, total_amount FROM orders WHERE status = ''delivered'' ORDER BY id', '', 'Orders with status delivered only.', 'Pick id and total_amount.', 'Use ORDER BY id.', 1, 1),
-('High value products', 'Return ecommerce products priced above 1000 ordered from highest price to lowest.', 'easy', 'Filtering', 'SELECT name, price FROM products WHERE price > 1000 ORDER BY price DESC', '', 'Use the products table.', 'Filter price > 1000.', 'Sort descending by price.', 1, 1),
-('Customer order counts', 'Count how many orders each ecommerce customer has placed. Include customers with zero orders and sort by order count descending, then name.', 'medium', 'Joins', 'SELECT u.full_name, COUNT(o.id) AS order_count FROM users u LEFT JOIN orders o ON o.user_id = u.id GROUP BY u.id, u.full_name ORDER BY order_count DESC, u.full_name', '', 'LEFT JOIN keeps customers without orders.', 'Group by customer.', 'Count order ids.', 1, 1),
-('Best selling categories', 'Calculate total quantity sold per product category from the ecommerce dataset.', 'medium', 'Aggregations', 'SELECT p.category, SUM(oi.quantity) AS total_quantity FROM order_items oi INNER JOIN products p ON p.id = oi.product_id GROUP BY p.category ORDER BY total_quantity DESC, p.category', '', 'Join order_items to products.', 'Aggregate quantity.', 'Group by category.', 1, 1),
-('Computer science achievers', 'List university students majoring in Computer Science who scored at least 90 in any course.', 'medium', 'Joins', 'SELECT DISTINCT s.full_name FROM students s INNER JOIN enrollments e ON e.student_id = s.id INNER JOIN grades g ON g.enrollment_id = e.id WHERE s.major = ''Computer Science'' AND g.score >= 90 ORDER BY s.full_name', '', 'You need students, enrollments, and grades.', 'Filter by major and score.', 'DISTINCT avoids duplicate names.', 1, 1),
-('Average score by department', 'Return each university department with the average grade score rounded to two decimals.', 'medium', 'Aggregations', 'SELECT c.department, ROUND(AVG(g.score), 2) AS avg_score FROM courses c INNER JOIN enrollments e ON e.course_id = c.id INNER JOIN grades g ON g.enrollment_id = e.id GROUP BY c.department ORDER BY avg_score DESC, c.department', '', 'Start from courses.', 'Join through enrollments to grades.', 'Use ROUND(AVG(...), 2).', 1, 1),
-('Doctors with completed visits', 'Show each hospital doctor and the number of completed appointments they handled.', 'hard', 'Joins', 'SELECT d.full_name, COUNT(a.id) AS completed_visits FROM doctors d LEFT JOIN appointments a ON a.doctor_id = d.id AND a.status = ''completed'' GROUP BY d.id, d.full_name ORDER BY completed_visits DESC, d.full_name', '', 'Filter completed visits in the JOIN condition.', 'LEFT JOIN keeps doctors with zero completed visits.', 'Count appointment ids.', 1, 1),
-('Patients with multiple prescriptions', 'Find hospital patients who received more than one prescription across all appointments.', 'hard', 'Aggregations', 'SELECT p.full_name, COUNT(pr.id) AS prescription_count FROM patients p INNER JOIN appointments a ON a.patient_id = p.id INNER JOIN prescriptions pr ON pr.appointment_id = a.id GROUP BY p.id, p.full_name HAVING COUNT(pr.id) > 1 ORDER BY prescription_count DESC, p.full_name', '', 'Join patients to appointments to prescriptions.', 'Group by patient.', 'Use HAVING for counts greater than one.', 1, 1),
-('Top spending customers', 'Find ecommerce customers whose delivered orders total more than 1000, ordered by total spend descending.', 'hard', 'Aggregations', 'SELECT u.full_name, SUM(o.total_amount) AS total_spend FROM users u INNER JOIN orders o ON o.user_id = u.id WHERE o.status = ''delivered'' GROUP BY u.id, u.full_name HAVING SUM(o.total_amount) > 1000 ORDER BY total_spend DESC, u.full_name', '', 'Join users to orders.', 'Filter to delivered orders before aggregation.', 'Use HAVING for the total greater than 1000.', 1, 1);
+('sql', 'SQL', 'Querying, joins, and database problem solving.', 1, 1),
+('python', 'Python', 'Core syntax, data structures, and coding practice.', 1, 2),
+('java', 'Java', 'OOP, collections, and backend development basics.', 1, 3);
+
+INSERT INTO problems (title, description, difficulty, category, expected_query, dataset_sql, hint1, hint2, hint3, is_active, created_by, subject_id)
+VALUES
+('List all ecommerce customers', 'Return every ecommerce customer with their city and signup date ordered by signup date.', 'easy', 'SELECT Basics', 'SELECT full_name, city, signup_date FROM users ORDER BY signup_date', '', 'Start from the users table.', 'Select only the requested columns.', 'Sort by signup_date ascending.', 1, 1, 1),
+('Delivered order totals', 'Show each delivered order id with its total amount from the ecommerce dataset.', 'easy', 'Filtering', 'SELECT id, total_amount FROM orders WHERE status = ''delivered'' ORDER BY id', '', 'Orders with status delivered only.', 'Pick id and total_amount.', 'Use ORDER BY id.', 1, 1, 1),
+('High value products', 'Return ecommerce products priced above 1000 ordered from highest price to lowest.', 'easy', 'Filtering', 'SELECT name, price FROM products WHERE price > 1000 ORDER BY price DESC', '', 'Use the products table.', 'Filter price > 1000.', 'Sort descending by price.', 1, 1, 1),
+('Customer order counts', 'Count how many orders each ecommerce customer has placed. Include customers with zero orders and sort by order count descending, then name.', 'medium', 'Joins', 'SELECT u.full_name, COUNT(o.id) AS order_count FROM users u LEFT JOIN orders o ON o.user_id = u.id GROUP BY u.id, u.full_name ORDER BY order_count DESC, u.full_name', '', 'LEFT JOIN keeps customers without orders.', 'Group by customer.', 'Count order ids.', 1, 1, 1),
+('Best selling categories', 'Calculate total quantity sold per product category from the ecommerce dataset.', 'medium', 'Aggregations', 'SELECT p.category, SUM(oi.quantity) AS total_quantity FROM order_items oi INNER JOIN products p ON p.id = oi.product_id GROUP BY p.category ORDER BY total_quantity DESC, p.category', '', 'Join order_items to products.', 'Aggregate quantity.', 'Group by category.', 1, 1, 1),
+('Computer science achievers', 'List university students majoring in Computer Science who scored at least 90 in any course.', 'medium', 'Joins', 'SELECT DISTINCT s.full_name FROM students s INNER JOIN enrollments e ON e.student_id = s.id INNER JOIN grades g ON g.enrollment_id = e.id WHERE s.major = ''Computer Science'' AND g.score >= 90 ORDER BY s.full_name', '', 'You need students, enrollments, and grades.', 'Filter by major and score.', 'DISTINCT avoids duplicate names.', 1, 1, 1),
+('Average score by department', 'Return each university department with the average grade score rounded to two decimals.', 'medium', 'Aggregations', 'SELECT c.department, ROUND(AVG(g.score), 2) AS avg_score FROM courses c INNER JOIN enrollments e ON e.course_id = c.id INNER JOIN grades g ON g.enrollment_id = e.id GROUP BY c.department ORDER BY avg_score DESC, c.department', '', 'Start from courses.', 'Join through enrollments to grades.', 'Use ROUND(AVG(...), 2).', 1, 1, 1),
+('Doctors with completed visits', 'Show each hospital doctor and the number of completed appointments they handled.', 'hard', 'Joins', 'SELECT d.full_name, COUNT(a.id) AS completed_visits FROM doctors d LEFT JOIN appointments a ON a.doctor_id = d.id AND a.status = ''completed'' GROUP BY d.id, d.full_name ORDER BY completed_visits DESC, d.full_name', '', 'Filter completed visits in the JOIN condition.', 'LEFT JOIN keeps doctors with zero completed visits.', 'Count appointment ids.', 1, 1, 1),
+('Patients with multiple prescriptions', 'Find hospital patients who received more than one prescription across all appointments.', 'hard', 'Aggregations', 'SELECT p.full_name, COUNT(pr.id) AS prescription_count FROM patients p INNER JOIN appointments a ON a.patient_id = p.id INNER JOIN prescriptions pr ON pr.appointment_id = a.id GROUP BY p.id, p.full_name HAVING COUNT(pr.id) > 1 ORDER BY prescription_count DESC, p.full_name', '', 'Join patients to appointments to prescriptions.', 'Group by patient.', 'Use HAVING for counts greater than one.', 1, 1, 1),
+('Top spending customers', 'Find ecommerce customers whose delivered orders total more than 1000, ordered by total spend descending.', 'hard', 'Aggregations', 'SELECT u.full_name, SUM(o.total_amount) AS total_spend FROM users u INNER JOIN orders o ON o.user_id = u.id WHERE o.status = ''delivered'' GROUP BY u.id, u.full_name HAVING SUM(o.total_amount) > 1000 ORDER BY total_spend DESC, u.full_name', '', 'Join users to orders.', 'Filter to delivered orders before aggregation.', 'Use HAVING for the total greater than 1000.', 1, 1, 1);
 
 INSERT INTO problem_datasets (problem_id, dataset_id)
 VALUES

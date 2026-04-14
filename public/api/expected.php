@@ -21,13 +21,30 @@ if ($problemId <= 0) {
 }
 
 $problem = Problem::find($problemId);
-$runner = new QueryRunner($problemId);
+$runner = null;
 
 try {
     if (!$problem) {
         throw new RuntimeException('Problem not found.');
     }
 
+    $subjectSlug = strtolower((string) ($problem['subject_slug'] ?? 'sql'));
+
+    if ($subjectSlug !== 'sql') {
+        echo json_encode([
+            'success' => true,
+            'rows' => [[
+                'expected_output' => trim((string) ($problem['expected_query'] ?? '')),
+            ]],
+            'columns' => ['expected_output'],
+            'row_count' => 1,
+            'execution_ms' => 0,
+            'error' => null,
+        ]);
+        return;
+    }
+
+    $runner = new QueryRunner($problemId);
     $runner->setupSandbox();
     $result = $runner->run((string) $problem['expected_query']);
     echo json_encode($result);
@@ -35,6 +52,8 @@ try {
     http_response_code(500);
     echo json_encode(['success' => false, 'error' => $throwable->getMessage()]);
 } finally {
-    $runner->teardown();
+    if ($runner instanceof QueryRunner) {
+        $runner->teardown();
+    }
 }
 

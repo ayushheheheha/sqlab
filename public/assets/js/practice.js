@@ -4,12 +4,22 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
+  const isSqlMode = (config.subjectSlug || 'sql') === 'sql';
+  const editorLanguage = config.editorLanguage || (isSqlMode ? 'sql' : 'python');
+
   const resultsPanel = document.getElementById('practice-tab-results');
   const logsPanel = document.getElementById('practice-tab-logs');
   const runButton = document.getElementById('runPracticeQuery');
   const resetButton = document.getElementById('resetPracticeQuery');
   const resetDbButton = document.getElementById('resetPracticeDb');
   const executionTime = document.getElementById('practiceExecutionTime');
+  const stdinInput = document.getElementById('practiceStdin');
+
+  if (!isSqlMode) {
+    const logsTabButton = document.querySelector('.solve-tabs button[data-tab="logs"]');
+    logsTabButton?.remove();
+    logsPanel?.remove();
+  }
 
   let editor;
 
@@ -18,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'vs-dark' : 'vs';
     editor = monaco.editor.create(document.getElementById('practiceEditor'), {
       value: config.starterQuery,
-      language: 'sql',
+      language: editorLanguage,
       theme: currentTheme,
       fontFamily: 'Consolas, "Courier New", monospace',
       fontSize: 14,
@@ -40,7 +50,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   runButton?.addEventListener('click', runSql);
   resetButton?.addEventListener('click', () => editor?.setValue(config.starterQuery));
-  resetDbButton?.addEventListener('click', resetDatabase);
+  if (isSqlMode) {
+    resetDbButton?.addEventListener('click', resetDatabase);
+  }
 
   document.querySelectorAll('.solve-tabs button').forEach((button) => {
     button.addEventListener('click', () => {
@@ -63,35 +75,50 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    setLoadingState(runButton, true, 'Run SQL');
-    resultsPanel.innerHTML = '<div class="empty-state">Running SQL...</div>';
+    setLoadingState(runButton, true, config.runLabel || (isSqlMode ? 'Run SQL' : 'Run Code'));
+    resultsPanel.innerHTML = `<div class="empty-state">${escapeHtml(isSqlMode ? 'Running SQL...' : 'Running code...')}</div>`;
 
     try {
       const query = editor.getValue();
-      const result = await postJson(config.endpoints.execute, { query });
+      const result = await postJson(config.endpoints.execute, {
+        query,
+        stdin: isSqlMode ? '' : String(stdinInput?.value || ''),
+      });
       executionTime.textContent = result.execution_ms ? `${result.execution_ms} ms` : '';
 
       if (!result.success) {
-        resultsPanel.innerHTML = `<div class="solve-flash error">${escapeHtml(result.error || 'Execution failed.')}</div>`;
-        appendLog(result.error || 'Execution failed.', 'error', query);
+        if (isSqlMode) {
+          resultsPanel.innerHTML = `<div class="solve-flash error">${escapeHtml(result.error || 'Execution failed.')}</div>`;
+          appendLog(result.error || 'Execution failed.', 'error', query, String(result.statement_type || (isSqlMode ? 'SQL' : editorLanguage.toUpperCase())));
+        } else {
+          renderCodeOutput(result);
+        }
         return;
       }
 
-      if ((result.columns || []).length > 0) {
+      if (!isSqlMode) {
+        renderCodeOutput(result);
+      } else if ((result.columns || []).length > 0) {
         renderTable(resultsPanel, result.columns || [], result.rows || []);
       } else {
         renderMutationOutput(result);
       }
 
-      appendLog(result.message || `Completed in ${result.execution_ms || 0} ms.`, 'success', query, result.statement_type);
-      editor.setValue('');
+      if (isSqlMode) {
+        appendLog(result.message || `Completed in ${result.execution_ms || 0} ms.`, 'success', query, result.statement_type || 'SQL');
+        editor.setValue('');
+      }
       editor.focus();
     } finally {
-      setLoadingState(runButton, false, 'Run SQL');
+      setLoadingState(runButton, false, config.runLabel || (isSqlMode ? 'Run SQL' : 'Run Code'));
     }
   }
 
   async function resetDatabase() {
+    if (!isSqlMode) {
+      return;
+    }
+
     if (resetDbButton?.disabled) {
       return;
     }
@@ -151,7 +178,26 @@ document.addEventListener('DOMContentLoaded', () => {
     resultsPanel.innerHTML = html;
   }
 
+  function renderCodeOutput(result) {
+    const stdout = String(result.stdout || '').trim();
+    const stderr = String(result.stderr || '').trim();
+    const compileOutput = String(result.compile_output || '').trim();
+    const fallbackOutput = String(result.display_output || '').trim();
+    const output = stdout || compileOutput || stderr || fallbackOutput;
+
+    if (!output) {
+      resultsPanel.innerHTML = '<div class="empty-state">Program finished with no output.</div>';
+      return;
+    }
+
+    resultsPanel.innerHTML = `<pre class="code-block">${escapeHtml(output)}</pre>`;
+  }
+
   function appendLog(message, type, query = '', statementType = '') {
+    if (!isSqlMode || !logsPanel) {
+      return;
+    }
+
     const tone = type === 'error' ? 'flash-error' : (type === 'warning' ? 'flash-warning' : 'flash-success');
     const log = document.createElement('div');
     log.className = `flash ${tone}`;
@@ -189,7 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     button.disabled = false;
-    button.innerHTML = label;
+    button.innerHTML = escapeHtml(label);
   }
 
   function escapeHtml(value) {

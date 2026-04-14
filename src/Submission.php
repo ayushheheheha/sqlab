@@ -174,17 +174,24 @@ final class Submission
         User::touchActivity($userId);
     }
 
-    public static function recentForUser(int $userId, int $limit = 10): array
+    public static function recentForUser(int $userId, int $limit = 10, ?int $subjectId = null): array
     {
-        $stmt = DB::getConnection()->prepare(
-            'SELECT s.*, p.title, p.difficulty
-             FROM submissions s
-             INNER JOIN problems p ON p.id = s.problem_id
-             WHERE s.user_id = :user_id
-             ORDER BY s.submitted_at DESC
-             LIMIT :limit'
-        );
+        $sql = 'SELECT s.*, p.title, p.difficulty
+                FROM submissions s
+                INNER JOIN problems p ON p.id = s.problem_id
+                WHERE s.user_id = :user_id';
+
+        if ($subjectId !== null && $subjectId > 0 && Subject::isReady()) {
+            $sql .= ' AND p.subject_id = :subject_id';
+        }
+
+        $sql .= ' ORDER BY s.submitted_at DESC LIMIT :limit';
+
+        $stmt = DB::getConnection()->prepare($sql);
         $stmt->bindValue(':user_id', $userId, PDO::PARAM_INT);
+        if ($subjectId !== null && $subjectId > 0 && Subject::isReady()) {
+            $stmt->bindValue(':subject_id', $subjectId, PDO::PARAM_INT);
+        }
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
 

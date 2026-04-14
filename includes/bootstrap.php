@@ -107,3 +107,44 @@ function pull_auth_flash(): ?array
     return is_array($flash) ? $flash : null;
 }
 
+function set_active_subject_slug(string $slug): void
+{
+    $slug = strtolower(trim($slug));
+
+    if ($slug !== '') {
+        $_SESSION['active_subject_slug'] = $slug;
+    }
+}
+
+function get_active_subject_slug(): string
+{
+    $slug = strtolower(trim((string) ($_SESSION['active_subject_slug'] ?? 'sql')));
+
+    return $slug === '' ? 'sql' : $slug;
+}
+
+function get_active_subject(): array
+{
+    $subject = Subject::findBySlug(get_active_subject_slug());
+
+    if ($subject) {
+        return $subject;
+    }
+
+    $all = Subject::allActive();
+
+    if ($all) {
+        set_active_subject_slug((string) $all[0]['slug']);
+        return $all[0];
+    }
+
+    return [
+        'id' => 1,
+        'slug' => 'sql',
+        'name' => 'SQL',
+        'description' => 'Querying, joins, and database problem solving.',
+        'is_active' => 1,
+        'sort_order' => 1,
+    ];
+}
+

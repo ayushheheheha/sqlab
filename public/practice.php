@@ -6,6 +6,10 @@ require_once dirname(__DIR__) . '/includes/bootstrap.php';
 
 Auth::requireLogin();
 $user = Auth::getCurrentUser();
+$activeSubject = get_active_subject();
+$subjectSlug = strtolower((string) ($activeSubject['slug'] ?? 'sql'));
+$isSqlSubject = $subjectSlug === 'sql';
+
 $starterQuery = <<<SQL
 CREATE TABLE products (
   id INT PRIMARY KEY AUTO_INCREMENT,
@@ -19,6 +23,24 @@ INSERT INTO products (name, price) VALUES
 
 SELECT * FROM products;
 SQL;
+
+if (!$isSqlSubject) {
+    $starterQuery = $subjectSlug === 'java'
+        ? "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Practice mode\");\n    }\n}" 
+        : "print('Practice mode')";
+}
+
+$editorLanguage = $isSqlSubject ? 'sql' : ($subjectSlug === 'java' ? 'java' : 'python');
+$runLabel = $isSqlSubject ? 'Run SQL' : 'Run Code';
+$resetLabel = $isSqlSubject ? 'Reset Query' : 'Reset Code';
+$modeBadge = strtoupper($subjectSlug) . ' Runtime';
+$descText = $isSqlSubject
+    ? 'This is your own SQL playground. Create tables, insert/update/delete rows, and run any normal SQL statements. Your sandbox is isolated and can be reset anytime.'
+    : 'Run and test code snippets in your active subject runtime. Output, compile errors, and runtime errors appear in the right panel.';
+$emptyText = $isSqlSubject ? 'Run SQL to see output.' : 'Run code to see output.';
+$stdinPlaceholder = $subjectSlug === 'java'
+    ? "Example:\n5\n9"
+    : "Example:\n5 9";
 
 $assetVersion = (string) filemtime(__DIR__ . '/assets/js/practice.js');
 ?>
@@ -43,43 +65,62 @@ $assetVersion = (string) filemtime(__DIR__ . '/assets/js/practice.js');
                 <div>
                     <h1>Practice Lab</h1>
                     <div class="solve-badges">
-                        <span class="badge badge-muted">Full SQL Sandbox</span>
-                        <span class="badge badge-warning">Isolated per session</span>
+                        <span class="badge badge-muted"><?= e($modeBadge) ?></span>
+                        <?php if ($isSqlSubject): ?>
+                            <span class="badge badge-warning">Isolated per session</span>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <a class="btn-ghost" href="<?= e(app_url('dashboard.php')) ?>">Back</a>
             </header>
             <details class="solve-description" open>
                 <summary>How this works</summary>
-                <p>This is your own SQL playground. Create tables, insert/update/delete rows, and run any normal SQL statements. Your sandbox is isolated and can be reset anytime.</p>
+                <p><?= e($descText) ?></p>
             </details>
             <div class="solve-toolbar">
-                <button class="btn-primary" id="runPracticeQuery" type="button">Run SQL <span class="muted">(Ctrl+Enter)</span></button>
-                <button class="btn-ghost" id="resetPracticeQuery" type="button">Reset Query</button>
-                <button class="btn-ghost" id="resetPracticeDb" type="button">Reset Database</button>
+                <button class="btn-primary" id="runPracticeQuery" type="button"><?= e($runLabel) ?> <span class="muted">(Ctrl+Enter)</span></button>
+                <button class="btn-ghost" id="resetPracticeQuery" type="button"><?= e($resetLabel) ?></button>
+                <?php if ($isSqlSubject): ?>
+                    <button class="btn-ghost" id="resetPracticeDb" type="button">Reset Database</button>
+                <?php endif; ?>
                 <span class="solve-time" id="practiceExecutionTime"></span>
             </div>
-            <div class="solve-hint">Tip: Run one statement at a time for best results.</div>
+            <?php if (!$isSqlSubject): ?>
+                <div class="card" style="padding:10px 14px; margin-top:10px;">
+                    <label for="practiceStdin" style="display:block; font-weight:600; margin-bottom:6px;">Program Input (stdin)</label>
+                    <textarea id="practiceStdin" rows="3" class="code-editor" style="min-height:78px; width:100%;" placeholder="<?= e($stdinPlaceholder) ?>"></textarea>
+                </div>
+            <?php endif; ?>
+            <?php if ($isSqlSubject): ?>
+                <div class="solve-hint">Tip: Run one statement at a time for best results.</div>
+            <?php endif; ?>
             <div class="monaco-shell" id="practiceEditor"></div>
         </section>
         <section class="solve-right">
             <div class="solve-tabs" role="tablist">
-                <button class="active" data-tab="results" type="button">Results</button>
-                <button data-tab="logs" type="button">Logs</button>
+                <button class="active" data-tab="results" type="button"><?= e($isSqlSubject ? 'Results' : 'Output') ?></button>
+                <?php if ($isSqlSubject): ?>
+                    <button data-tab="logs" type="button">Logs</button>
+                <?php endif; ?>
             </div>
             <div class="solve-output">
                 <div class="solve-tab-panel active" id="practice-tab-results">
-                    <div class="empty-state">Run SQL to see output.</div>
+                    <div class="empty-state"><?= e($emptyText) ?></div>
                 </div>
-                <div class="solve-tab-panel" id="practice-tab-logs">
-                    <div class="empty-state">Execution logs will appear here.</div>
-                </div>
+                <?php if ($isSqlSubject): ?>
+                    <div class="solve-tab-panel" id="practice-tab-logs">
+                        <div class="empty-state">Execution logs will appear here.</div>
+                    </div>
+                <?php endif; ?>
             </div>
         </section>
     </main>
     <script>
         window.SQLAB_PRACTICE = {
             starterQuery: <?= json_encode($starterQuery, JSON_THROW_ON_ERROR) ?>,
+            editorLanguage: <?= json_encode($editorLanguage, JSON_THROW_ON_ERROR) ?>,
+            subjectSlug: <?= json_encode($subjectSlug, JSON_THROW_ON_ERROR) ?>,
+            runLabel: <?= json_encode($runLabel, JSON_THROW_ON_ERROR) ?>,
             endpoints: {
                 execute: <?= json_encode(app_url('api/practice_execute.php'), JSON_THROW_ON_ERROR) ?>,
                 reset: <?= json_encode(app_url('api/practice_reset.php'), JSON_THROW_ON_ERROR) ?>
