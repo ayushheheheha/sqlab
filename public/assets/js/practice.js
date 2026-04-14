@@ -226,9 +226,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const now = new Date();
-    const compactQuery = String(query || '').replace(/\s+/g, ' ').trim();
-    const queryPreview = compactQuery.length > 180 ? `${compactQuery.slice(0, 177)}...` : compactQuery;
-
     const entry = document.createElement('article');
     entry.className = 'card';
     entry.style.marginTop = '10px';
@@ -237,7 +234,6 @@ document.addEventListener('DOMContentLoaded', () => {
         <span class="badge badge-muted">${escapeHtml(statementType || 'SQL')}</span>
         <span class="muted" style="font-size:12px;">${escapeHtml(now.toLocaleTimeString())}</span>
       </div>
-      ${queryPreview ? `<pre class="code-block" style="margin:0 0 10px 0;">${escapeHtml(queryPreview)}</pre>` : ''}
       ${contentHtml}
     `;
 
